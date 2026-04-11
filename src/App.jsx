@@ -492,11 +492,36 @@ export default function App() {
   );
   const { playRevealAudio } = useRevealAudio();
 
-  const activateTvAudio = useCallback(() => {
-    if (tvAudioReady) return;
-    unlockAudio();
+  const activateTvAudio = useCallback(async () => {
     setTvAudioReady(true);
-  }, [tvAudioReady, unlockAudio]);
+
+    try {
+      unlockAudio();
+
+      const audioEl = tvQuestionAudioRef.current;
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.currentTime = 0;
+        audioEl.muted = true;
+        audioEl.src = COUNTDOWN_AUDIO_SRC;
+        audioEl.load();
+
+        try {
+          await audioEl.play();
+        } catch {
+          // ignore
+        }
+
+        audioEl.pause();
+        audioEl.currentTime = 0;
+        audioEl.muted = false;
+        audioEl.removeAttribute("src");
+        audioEl.load();
+      }
+    } catch {
+      // ignore
+    }
+  }, [unlockAudio]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1961,7 +1986,12 @@ export default function App() {
           <button onClick={() => setRole("player")} style={buttonStyle}>
             GIOCATORE
           </button>
-          <button onClick={() => setRole("tv")} style={buttonStyle}>
+          <button
+            onClick={() => {
+              setRole("tv");
+            }}
+            style={buttonStyle}
+          >
             TV
           </button>
         </div>
@@ -2289,6 +2319,41 @@ export default function App() {
         />
 
         <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
+
+        {!tvAudioReady && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(0,0,0,0.55)",
+              zIndex: 10000,
+            }}
+          >
+            <div
+              style={{
+                ...panelStyle,
+                textAlign: "center",
+                width: "min(520px, 92vw)",
+              }}
+            >
+              <div style={{ fontSize: 36, fontWeight: "bold", marginBottom: 12 }}>
+                🔊 Attiva audio TV
+              </div>
+              <div style={{ fontSize: 20, opacity: 0.9, marginBottom: 20 }}>
+                Premi una volta qui per abilitare audio countdown e audio domande
+              </div>
+              <button
+                onClick={activateTvAudio}
+                style={{ ...buttonStyle, fontSize: 20, padding: "16px 24px" }}
+              >
+                ATTIVA AUDIO
+              </button>
+            </div>
+          </div>
+        )}
 
         {tvJollyEffect && (
           <div
