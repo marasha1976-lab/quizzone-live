@@ -424,6 +424,7 @@ export default function App() {
   const [tvRevealEffect, setTvRevealEffect] = useState(null);
   const [tvJollyEffect, setTvJollyEffect] = useState(null);
   const [tvAudioReady, setTvAudioReady] = useState(false);
+  const [hideTvAudioOverlay, setHideTvAudioOverlay] = useState(false);
 
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [renderNow, setRenderNow] = useState(Date.now());
@@ -493,6 +494,7 @@ export default function App() {
   const { playRevealAudio } = useRevealAudio();
 
   const activateTvAudio = useCallback(async () => {
+    setHideTvAudioOverlay(true);
     setTvAudioReady(true);
 
     try {
@@ -1159,6 +1161,7 @@ export default function App() {
       phaseSwitchInFlightRef.current = false;
       setGame(data);
       setTvAudioReady(false);
+      setHideTvAudioOverlay(false);
       lastTvQuestionAudioKeyRef.current = null;
 
       await loadAll({ silent: true });
@@ -1616,64 +1619,87 @@ export default function App() {
     const audioEl = tvQuestionAudioRef.current;
     if (!audioEl) return;
 
-    if (!tvAudioReady) {
+    const resetAudio = () => {
       audioEl.pause();
       audioEl.currentTime = 0;
       audioEl.removeAttribute("src");
       audioEl.load();
       lastTvQuestionAudioKeyRef.current = null;
+    };
+
+    if (!tvAudioReady) {
+      resetAudio();
       return;
     }
 
     if (effectivePhase !== "question") {
-      audioEl.pause();
-      audioEl.currentTime = 0;
-      audioEl.removeAttribute("src");
-      audioEl.load();
-      lastTvQuestionAudioKeyRef.current = null;
+      resetAudio();
       return;
     }
 
     if (!currentQuestion?.audio_url || !currentQuestion?.id) {
-      audioEl.pause();
-      audioEl.currentTime = 0;
-      audioEl.removeAttribute("src");
-      audioEl.load();
-      lastTvQuestionAudioKeyRef.current = null;
+      resetAudio();
       return;
     }
 
     const key = `${currentQuestion.id}-${currentQuestion.audio_url}`;
-
     if (lastTvQuestionAudioKeyRef.current === key) return;
     lastTvQuestionAudioKeyRef.current = key;
 
     audioEl.pause();
     audioEl.currentTime = 0;
     audioEl.src = currentQuestion.audio_url;
+    audioEl.preload = "auto";
     audioEl.load();
 
-    const playNow = async () => {
+    let cancelled = false;
+    let retryTimeout = null;
+
+    const tryPlay = async () => {
+      if (cancelled) return;
+
       try {
+        audioEl.muted = false;
         await audioEl.play();
       } catch (err) {
         console.log("Audio domanda bloccato:", err);
+        retryTimeout = setTimeout(() => {
+          tryPlay();
+        }, 400);
       }
     };
 
-    playNow();
+    const onCanPlay = () => {
+      tryPlay();
+    };
+
+    audioEl.addEventListener("canplaythrough", onCanPlay, { once: true });
+
+    retryTimeout = setTimeout(() => {
+      tryPlay();
+    }, 250);
 
     const stopTimer = setTimeout(() => {
       audioEl.pause();
       audioEl.currentTime = 0;
-    }, COUNTDOWN_DURATION * 1000);
+    }, (Number(currentQuestion.time_limit) || COUNTDOWN_DURATION) * 1000);
 
     return () => {
+      cancelled = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
       clearTimeout(stopTimer);
       audioEl.pause();
       audioEl.currentTime = 0;
+      audioEl.removeEventListener("canplaythrough", onCanPlay);
     };
-  }, [role, tvAudioReady, effectivePhase, currentQuestion?.id, currentQuestion?.audio_url]);
+  }, [
+    role,
+    tvAudioReady,
+    effectivePhase,
+    currentQuestion?.id,
+    currentQuestion?.audio_url,
+    currentQuestion?.time_limit,
+  ]);
 
   useEffect(() => {
     if (role !== "tv") return;
@@ -1986,12 +2012,7 @@ export default function App() {
           <button onClick={() => setRole("player")} style={buttonStyle}>
             GIOCATORE
           </button>
-          <button
-            onClick={() => {
-              setRole("tv");
-            }}
-            style={buttonStyle}
-          >
+          <button onClick={() => setRole("tv")} style={buttonStyle}>
             TV
           </button>
         </div>
@@ -2315,12 +2336,13 @@ export default function App() {
           ref={tvQuestionAudioRef}
           preload="auto"
           playsInline
+          controls={false}
           style={{ display: "none" }}
         />
 
         <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
 
-        {!tvAudioReady && (
+        {!hideTvAudioOverlay && (
           <div
             style={{
               position: "fixed",
@@ -3206,8 +3228,7 @@ export default function App() {
             {liveEvents.length === 0 ? (
               <p>Nessun evento.</p>
             ) : (
-             console.log("CIAO TEST");
- liveEvents.map((event) => (
+              liveEvents.map((event) => (
                 <div
                   key={event.id}
                   style={{
