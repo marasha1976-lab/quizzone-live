@@ -11,8 +11,8 @@ const supabase = createClient(
 const GAME_CODE = "PUB2026";
 const COUNTDOWN_DURATION = 10;
 const QUESTION_START_DELAY_MS = 3000;
-const COUNTDOWN_AUDIO_SRC = "/sounds/countdown10.m4a";
-const REVEAL_AUDIO_SRC = "/sounds/reveal.mp3";
+const COUNTDOWN_AUDIO_SRC = "/media/countdown10.m4a";
+const REVEAL_AUDIO_SRC = "";
 
 const DEMO_QUESTIONS = [
   {
@@ -60,7 +60,7 @@ const DEMO_QUESTIONS = [
     explanation: "Nell'immagine è scritto Sabato 14 Giugno.",
     time_limit: 10,
     points: 100,
-    image_url: "/media/evento.jpg",
+    image_url: "/images/evento.jpg",
     audio_url: "",
   },
 ];
@@ -379,6 +379,8 @@ function useRevealAudio() {
   const revealAudioRef = useRef(null);
 
   const playRevealAudio = useCallback(() => {
+    if (!REVEAL_AUDIO_SRC) return;
+
     try {
       if (!revealAudioRef.current) {
         const audio = new Audio(REVEAL_AUDIO_SRC);
@@ -489,6 +491,37 @@ export default function App() {
     () => syncedNowRef.current
   );
   const { playRevealAudio } = useRevealAudio();
+
+  const activateTvAudio = useCallback(async () => {
+    setTvAudioReady(true);
+
+    try {
+      unlockAudio();
+
+      const audioEl = tvQuestionAudioRef.current;
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.currentTime = 0;
+        audioEl.muted = true;
+        audioEl.src = COUNTDOWN_AUDIO_SRC;
+        audioEl.load();
+
+        try {
+          await audioEl.play();
+        } catch {
+          // ignore
+        }
+
+        audioEl.pause();
+        audioEl.currentTime = 0;
+        audioEl.muted = false;
+        audioEl.removeAttribute("src");
+        audioEl.load();
+      }
+    } catch {
+      // ignore
+    }
+  }, [unlockAudio]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2273,7 +2306,9 @@ export default function App() {
           overflow: "hidden",
         }}
         onClick={() => {
-          unlockAudio();
+          if (!tvAudioReady) {
+            activateTvAudio();
+          }
         }}
       >
         <audio
@@ -2311,22 +2346,7 @@ export default function App() {
                 Premi una volta qui per abilitare audio countdown e audio domande
               </div>
               <button
-                onClick={async () => {
-                  unlockAudio();
-                  const audioEl = tvQuestionAudioRef.current;
-                  if (audioEl) {
-                    try {
-                      audioEl.muted = true;
-                      await audioEl.play();
-                      audioEl.pause();
-                      audioEl.currentTime = 0;
-                      audioEl.muted = false;
-                    } catch {
-                      audioEl.muted = false;
-                    }
-                  }
-                  setTvAudioReady(true);
-                }}
+                onClick={activateTvAudio}
                 style={{ ...buttonStyle, fontSize: 20, padding: "16px 24px" }}
               >
                 ATTIVA AUDIO
