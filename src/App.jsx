@@ -424,7 +424,6 @@ export default function App() {
   const [tvRevealEffect, setTvRevealEffect] = useState(null);
   const [tvJollyEffect, setTvJollyEffect] = useState(null);
   const [tvAudioReady, setTvAudioReady] = useState(false);
-  
 
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [renderNow, setRenderNow] = useState(Date.now());
@@ -493,11 +492,16 @@ export default function App() {
   );
   const { playRevealAudio } = useRevealAudio();
 
-  
-    setHideTvAudioOverlay(true);
+  const activateTvAudio = useCallback(async () => {
+    if (tvAudioReady) return;
+    try {
+      unlockAudio();
+    } catch {
+      // ignore
+    }
     setTvAudioReady(true);
-const activateTvAudio = useCallback(async () => {
-  if (tvAudioReady) return;
+  }, [tvAudioReady, unlockAudio]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -2295,7 +2299,6 @@ const activateTvAudio = useCallback(async () => {
 
         <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
 
-        
         {tvJollyEffect && (
           <div
             style={{
