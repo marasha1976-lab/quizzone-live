@@ -424,7 +424,7 @@ export default function App() {
   const [tvRevealEffect, setTvRevealEffect] = useState(null);
   const [tvJollyEffect, setTvJollyEffect] = useState(null);
   const [tvAudioReady, setTvAudioReady] = useState(false);
-  const [hideTvAudioOverlay, setHideTvAudioOverlay] = useState(false);
+  
 
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [renderNow, setRenderNow] = useState(Date.now());
@@ -493,38 +493,11 @@ export default function App() {
   );
   const { playRevealAudio } = useRevealAudio();
 
-  const activateTvAudio = useCallback(async () => {
+  
     setHideTvAudioOverlay(true);
     setTvAudioReady(true);
-
-    try {
-      unlockAudio();
-
-      const audioEl = tvQuestionAudioRef.current;
-      if (audioEl) {
-        audioEl.pause();
-        audioEl.currentTime = 0;
-        audioEl.muted = true;
-        audioEl.src = COUNTDOWN_AUDIO_SRC;
-        audioEl.load();
-
-        try {
-          await audioEl.play();
-        } catch {
-          // ignore
-        }
-
-        audioEl.pause();
-        audioEl.currentTime = 0;
-        audioEl.muted = false;
-        audioEl.removeAttribute("src");
-        audioEl.load();
-      }
-    } catch {
-      // ignore
-    }
-  }, [unlockAudio]);
-
+const activateTvAudio = useCallback(async () => {
+  if (tvAudioReady) return;
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -1161,7 +1134,6 @@ export default function App() {
       phaseSwitchInFlightRef.current = false;
       setGame(data);
       setTvAudioReady(false);
-      setHideTvAudioOverlay(false);
       lastTvQuestionAudioKeyRef.current = null;
 
       await loadAll({ silent: true });
@@ -2323,41 +2295,7 @@ export default function App() {
 
         <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
 
-        {!hideTvAudioOverlay && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(0,0,0,0.55)",
-              zIndex: 10000,
-            }}
-          >
-            <div
-              style={{
-                ...panelStyle,
-                textAlign: "center",
-                width: "min(520px, 92vw)",
-              }}
-            >
-              <div style={{ fontSize: 36, fontWeight: "bold", marginBottom: 12 }}>
-                🔊 Attiva audio TV
-              </div>
-              <div style={{ fontSize: 20, opacity: 0.9, marginBottom: 20 }}>
-                Premi una volta qui per abilitare audio countdown e audio domande
-              </div>
-              <button
-                onClick={activateTvAudio}
-                style={{ ...buttonStyle, fontSize: 20, padding: "16px 24px" }}
-              >
-                ATTIVA AUDIO
-              </button>
-            </div>
-          </div>
-        )}
-
+        
         {tvJollyEffect && (
           <div
             style={{
