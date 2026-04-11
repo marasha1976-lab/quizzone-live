@@ -492,13 +492,9 @@ export default function App() {
   );
   const { playRevealAudio } = useRevealAudio();
 
-  const activateTvAudio = useCallback(async () => {
+  const activateTvAudio = useCallback(() => {
     if (tvAudioReady) return;
-    try {
-      unlockAudio();
-    } catch {
-      // ignore
-    }
+    unlockAudio();
     setTvAudioReady(true);
   }, [tvAudioReady, unlockAudio]);
 
@@ -1965,12 +1961,7 @@ export default function App() {
           <button onClick={() => setRole("player")} style={buttonStyle}>
             GIOCATORE
           </button>
-          <button
-            onClick={() => {
-              setRole("tv");
-            }}
-            style={buttonStyle}
-          >
+          <button onClick={() => setRole("tv")} style={buttonStyle}>
             TV
           </button>
         </div>
