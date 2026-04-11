@@ -1613,94 +1613,70 @@ export default function App() {
     stopCountdownAudio,
   ]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (role !== "tv") return;
 
     const audioEl = tvQuestionAudioRef.current;
     if (!audioEl) return;
 
-    const resetAudio = () => {
+    if (!tvAudioReady) {
       audioEl.pause();
       audioEl.currentTime = 0;
       audioEl.removeAttribute("src");
       audioEl.load();
       lastTvQuestionAudioKeyRef.current = null;
-    };
-
-    if (!tvAudioReady) {
-      resetAudio();
       return;
     }
 
     if (effectivePhase !== "question") {
-      resetAudio();
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.removeAttribute("src");
+      audioEl.load();
+      lastTvQuestionAudioKeyRef.current = null;
       return;
     }
 
     if (!currentQuestion?.audio_url || !currentQuestion?.id) {
-      resetAudio();
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.removeAttribute("src");
+      audioEl.load();
+      lastTvQuestionAudioKeyRef.current = null;
       return;
     }
 
     const key = `${currentQuestion.id}-${currentQuestion.audio_url}`;
+
     if (lastTvQuestionAudioKeyRef.current === key) return;
     lastTvQuestionAudioKeyRef.current = key;
 
     audioEl.pause();
     audioEl.currentTime = 0;
     audioEl.src = currentQuestion.audio_url;
-    audioEl.preload = "auto";
     audioEl.load();
 
-    let cancelled = false;
-    let retryTimeout = null;
-
-    const tryPlay = async () => {
-      if (cancelled) return;
-
+    const playNow = async () => {
       try {
-        audioEl.muted = false;
         await audioEl.play();
       } catch (err) {
         console.log("Audio domanda bloccato:", err);
-        retryTimeout = setTimeout(() => {
-          tryPlay();
-        }, 400);
       }
     };
 
-    const onCanPlay = () => {
-      tryPlay();
-    };
-
-    audioEl.addEventListener("canplaythrough", onCanPlay, { once: true });
-
-    retryTimeout = setTimeout(() => {
-      tryPlay();
-    }, 250);
+    playNow();
 
     const stopTimer = setTimeout(() => {
       audioEl.pause();
       audioEl.currentTime = 0;
-    }, (Number(currentQuestion.time_limit) || COUNTDOWN_DURATION) * 1000);
+    }, COUNTDOWN_DURATION * 1000);
 
     return () => {
-      cancelled = true;
-      if (retryTimeout) clearTimeout(retryTimeout);
       clearTimeout(stopTimer);
       audioEl.pause();
       audioEl.currentTime = 0;
-      audioEl.removeEventListener("canplaythrough", onCanPlay);
     };
-  }, [
-    role,
-    tvAudioReady,
-    effectivePhase,
-    currentQuestion?.id,
-    currentQuestion?.audio_url,
-    currentQuestion?.time_limit,
-  ]);
-
+  }, [role, tvAudioReady, effectivePhase, currentQuestion?.id, currentQuestion?.audio_url]);
   useEffect(() => {
     if (role !== "tv") return;
 
@@ -2336,7 +2312,6 @@ export default function App() {
           ref={tvQuestionAudioRef}
           preload="auto"
           playsInline
-          controls={false}
           style={{ display: "none" }}
         />
 
