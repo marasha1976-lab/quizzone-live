@@ -1613,7 +1613,7 @@ export default function App() {
     stopCountdownAudio,
   ]);
 
-    useEffect(() => {
+  useEffect(() => {
     if (role !== "tv") return;
 
     const audioEl = tvQuestionAudioRef.current;
@@ -1677,6 +1677,7 @@ export default function App() {
       audioEl.currentTime = 0;
     };
   }, [role, tvAudioReady, effectivePhase, currentQuestion?.id, currentQuestion?.audio_url]);
+
   useEffect(() => {
     if (role !== "tv") return;
 
