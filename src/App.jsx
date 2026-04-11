@@ -1619,29 +1619,27 @@ export default function App() {
     const audioEl = tvQuestionAudioRef.current;
     if (!audioEl) return;
 
-    if (!tvAudioReady) {
+    const stopQuestionAudio = () => {
       audioEl.pause();
       audioEl.currentTime = 0;
       audioEl.removeAttribute("src");
       audioEl.load();
+    };
+
+    if (!tvAudioReady) {
+      stopQuestionAudio();
       lastTvQuestionAudioKeyRef.current = null;
       return;
     }
 
     if (effectivePhase !== "question") {
-      audioEl.pause();
-      audioEl.currentTime = 0;
-      audioEl.removeAttribute("src");
-      audioEl.load();
+      stopQuestionAudio();
       lastTvQuestionAudioKeyRef.current = null;
       return;
     }
 
     if (!currentQuestion?.audio_url || !currentQuestion?.id) {
-      audioEl.pause();
-      audioEl.currentTime = 0;
-      audioEl.removeAttribute("src");
-      audioEl.load();
+      stopQuestionAudio();
       lastTvQuestionAudioKeyRef.current = null;
       return;
     }
@@ -1651,10 +1649,14 @@ export default function App() {
     if (lastTvQuestionAudioKeyRef.current === key) return;
     lastTvQuestionAudioKeyRef.current = key;
 
+    stopCountdownAudio();
+
     audioEl.pause();
     audioEl.currentTime = 0;
     audioEl.src = currentQuestion.audio_url;
     audioEl.load();
+
+    let cancelled = false;
 
     const playNow = async () => {
       try {
@@ -1667,16 +1669,40 @@ export default function App() {
     playNow();
 
     const stopTimer = setTimeout(() => {
+      if (cancelled) return;
       audioEl.pause();
       audioEl.currentTime = 0;
     }, COUNTDOWN_DURATION * 1000);
 
     return () => {
+      cancelled = true;
       clearTimeout(stopTimer);
       audioEl.pause();
       audioEl.currentTime = 0;
     };
-  }, [role, tvAudioReady, effectivePhase, currentQuestion?.id, currentQuestion?.audio_url]);
+  }, [
+    role,
+    tvAudioReady,
+    effectivePhase,
+    currentQuestion?.id,
+    currentQuestion?.audio_url,
+    stopCountdownAudio,
+  ]);
+
+  useEffect(() => {
+    const audioEl = tvQuestionAudioRef.current;
+    if (!audioEl) return;
+
+    if (role !== "tv") return;
+
+    if (effectivePhase !== "question") {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.removeAttribute("src");
+      audioEl.load();
+      lastTvQuestionAudioKeyRef.current = null;
+    }
+  }, [role, effectivePhase, game?.phase, game?.current_question_index]);
 
   useEffect(() => {
     if (role !== "tv") return;
