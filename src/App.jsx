@@ -3206,7 +3206,8 @@ export default function App() {
             {liveEvents.length === 0 ? (
               <p>Nessun evento.</p>
             ) : (
-              liveEvents.map((event) => (
+             console.log("CIAO TEST");
+ liveEvents.map((event) => (
                 <div
                   key={event.id}
                   style={{
