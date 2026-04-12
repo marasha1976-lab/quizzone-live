@@ -2424,7 +2424,8 @@ export default function App() {
           )}
  
   return (
-    <div style={{ ...containerStyle, position: "relative" }}>  if (role === "tv") {
+    <div style={{ ...containerStyle, position: "relative" }}>  
+  if (role === "tv") {
     return (
       <div
         style={{
@@ -2435,8 +2436,7 @@ export default function App() {
           color: "white",
           fontFamily: "Arial, sans-serif",
           background: APP_BG,
-          position: "fixed",
-          inset: 0,
+          position: "relative",
           overflow: "hidden",
         }}
         onClick={() => {
@@ -2600,9 +2600,9 @@ export default function App() {
             height: "100%",
             boxSizing: "border-box",
             paddingTop: 132,
-            paddingBottom: 18,
-            paddingLeft: 18,
-            paddingRight: 18,
+            paddingBottom: 20,
+            paddingLeft: 22,
+            paddingRight: 22,
             overflow: "hidden",
           }}
         >
@@ -2636,7 +2636,7 @@ export default function App() {
                   flex: 1,
                   minHeight: 0,
                   display: "grid",
-                  gridTemplateColumns: "0.9fr 1.1fr",
+                  gridTemplateColumns: "0.92fr 1.08fr",
                   gap: 18,
                   overflow: "hidden",
                 }}
@@ -2879,38 +2879,21 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "20px 24px",
+                padding: 40,
                 textAlign: "center",
                 height: "100%",
-                display: "grid",
-                gridTemplateRows: "auto auto 1fr",
-                gap: 16,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
                 overflow: "hidden",
               }}
             >
-              <div
-                style={{
-                  fontSize: "clamp(34px, 3.2vw, 48px)",
-                  opacity: 0.9,
-                  lineHeight: 1.05,
-                }}
-              >
+              {renderQuestionMedia(currentQuestion, "tv")}
+              <div style={{ fontSize: 38, marginBottom: 16, opacity: 0.9 }}>
                 Prossima domanda tra...
               </div>
-
-              <div style={{ fontSize: "clamp(72px, 8vw, 120px)", fontWeight: "bold", color: GOLD }}>
+              <div style={{ fontSize: 96, fontWeight: "bold", color: GOLD }}>
                 {countdownTimeLeft}
-              </div>
-
-              <div
-                style={{
-                  minHeight: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {renderQuestionMedia(currentQuestion, "tv")}
               </div>
             </div>
           )}
@@ -2919,21 +2902,24 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "18px 22px",
+                padding: "24px 28px",
+                position: "relative",
                 height: "100%",
                 overflow: "hidden",
-                display: "grid",
-                gridTemplateRows: "auto auto 1fr",
-                gap: 14,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
               }}
             >
               <div
                 style={{
-                  fontSize: "clamp(38px, 4.2vw, 64px)",
+                  fontSize: "clamp(42px, 5vw, 70px)",
                   fontWeight: "bold",
                   color: localTimeLeft <= 5 ? GOLD : "white",
+                  marginBottom: 16,
                   textAlign: "center",
                   lineHeight: 1,
+                  flexShrink: 0,
                   animation:
                     localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
                 }}
@@ -2941,12 +2927,15 @@ export default function App() {
                 ⏳ {localTimeLeft}
               </div>
 
+              {renderQuestionMedia(currentQuestion, "tv")}
+
               <h2
                 style={{
-                  fontSize: "clamp(24px, 2.5vw, 40px)",
-                  lineHeight: 1.15,
-                  margin: 0,
+                  fontSize: "clamp(24px, 2.8vw, 42px)",
+                  lineHeight: 1.2,
+                  margin: "0 0 20px 0",
                   textAlign: "center",
+                  flexShrink: 0,
                 }}
               >
                 {currentQuestion.question}
@@ -2954,89 +2943,75 @@ export default function App() {
 
               <div
                 style={{
-                  minHeight: 0,
                   display: "grid",
-                  gridTemplateColumns: currentQuestion.image_url ? "1.05fr 0.95fr" : "1fr",
-                  gap: 18,
-                  alignItems: "stretch",
-                  overflow: "hidden",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
                 }}
               >
-                {currentQuestion.image_url && (
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderQuestionMedia(currentQuestion, "tv")}
-                  </div>
-                )}
+                <div
+                  style={{
+                    ...getTvOptionStyle("A"),
+                    fontSize: "clamp(20px, 2vw, 30px)",
+                    padding: "18px 20px",
+                    minHeight: 90,
+                    display: "flex",
+                    alignItems: "center",
+                    animation: "answerFlashPop 0.25s ease",
+                  }}
+                >
+                  A - {currentQuestion.option_a}
+                </div>
 
                 <div
                   style={{
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 14,
-                    alignContent: "center",
+                    ...getTvOptionStyle("B"),
+                    fontSize: "clamp(20px, 2vw, 30px)",
+                    padding: "18px 20px",
+                    minHeight: 90,
+                    display: "flex",
+                    alignItems: "center",
+                    animation: "answerFlashPop 0.25s ease",
                   }}
                 >
-                  <div
-                    style={{
-                      ...getTvOptionStyle("A"),
-                      fontSize: "clamp(22px, 1.8vw, 32px)",
-                      padding: "18px 20px",
-                      minHeight: currentQuestion.image_url ? 88 : 110,
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
-                    A - {currentQuestion.option_a}
-                  </div>
-
-                  <div
-                    style={{
-                      ...getTvOptionStyle("B"),
-                      fontSize: "clamp(22px, 1.8vw, 32px)",
-                      padding: "18px 20px",
-                      minHeight: currentQuestion.image_url ? 88 : 110,
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
-                    B - {currentQuestion.option_b}
-                  </div>
-
-                  {currentQuestion.option_c && (
-                    <div
-                      style={{
-                        ...getTvOptionStyle("C"),
-                        fontSize: "clamp(22px, 1.8vw, 32px)",
-                        padding: "18px 20px",
-                        minHeight: currentQuestion.image_url ? 88 : 110,
-                        animation: "answerFlashPop 0.25s ease",
-                      }}
-                    >
-                      C - {currentQuestion.option_c}
-                    </div>
-                  )}
-
-                  {currentQuestion.option_d && (
-                    <div
-                      style={{
-                        ...getTvOptionStyle("D"),
-                        fontSize: "clamp(22px, 1.8vw, 32px)",
-                        padding: "18px 20px",
-                        minHeight: currentQuestion.image_url ? 88 : 110,
-                        animation: "answerFlashPop 0.25s ease",
-                      }}
-                    >
-                      D - {currentQuestion.option_d}
-                    </div>
-                  )}
+                  B - {currentQuestion.option_b}
                 </div>
+
+                {currentQuestion.option_c && (
+                  <div
+                    style={{
+                      ...getTvOptionStyle("C"),
+                      fontSize: "clamp(20px, 2vw, 30px)",
+                      padding: "18px 20px",
+                      minHeight: 90,
+                      display: "flex",
+                      alignItems: "center",
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    C - {currentQuestion.option_c}
+                  </div>
+                )}
+
+                {currentQuestion.option_d && (
+                  <div
+                    style={{
+                      ...getTvOptionStyle("D"),
+                      fontSize: "clamp(20px, 2vw, 30px)",
+                      padding: "18px 20px",
+                      minHeight: 90,
+                      display: "flex",
+                      alignItems: "center",
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    D - {currentQuestion.option_d}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3045,20 +3020,23 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "20px 24px",
+                padding: "24px 28px",
                 height: "100%",
-                display: "grid",
-                gridTemplateRows: "auto auto 1fr",
-                gap: 14,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.35s ease",
               }}
             >
+              {renderQuestionMedia(currentQuestion, "tv")}
+
               <h2
                 style={{
                   fontSize: "clamp(28px, 3.6vw, 48px)",
-                  margin: 0,
+                  margin: "0 0 10px 0",
+                  flexShrink: 0,
                 }}
               >
                 📊 Percentuali risposte
@@ -3068,7 +3046,8 @@ export default function App() {
                 style={{
                   fontSize: "clamp(18px, 2vw, 28px)",
                   color: GOLD,
-                  margin: 0,
+                  marginBottom: 18,
+                  flexShrink: 0,
                 }}
               >
                 {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
@@ -3076,42 +3055,20 @@ export default function App() {
 
               <div
                 style={{
-                  minHeight: 0,
                   display: "grid",
-                  gridTemplateColumns: currentQuestion.image_url ? "1.05fr 0.95fr" : "1fr",
-                  gap: 18,
-                  alignItems: "stretch",
-                  overflow: "hidden",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
                 }}
               >
-                {currentQuestion.image_url && (
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderQuestionMedia(currentQuestion, "tv")}
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 14,
-                    alignContent: "center",
-                  }}
-                >
-                  {renderStatsBar("A", currentQuestion.option_a)}
-                  {renderStatsBar("B", currentQuestion.option_b)}
-                  {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
-                  {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
-                </div>
+                {renderStatsBar("A", currentQuestion.option_a)}
+                {renderStatsBar("B", currentQuestion.option_b)}
+                {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
+                {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
               </div>
             </div>
           )}
@@ -3120,93 +3077,73 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "20px 24px",
+                padding: "24px 28px",
                 height: "100%",
-                display: "grid",
-                gridTemplateRows: "auto auto 1fr",
-                gap: 14,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.45s ease",
               }}
             >
+              {renderQuestionMedia(currentQuestion, "tv")}
+
               <h2
                 style={{
                   fontSize: "clamp(32px, 4vw, 54px)",
                   color: GREEN,
-                  margin: 0,
+                  margin: "0 0 12px 0",
+                  flexShrink: 0,
                 }}
               >
                 ✅ Risposta corretta: {currentQuestion.correct_answer}
               </h2>
 
-              {currentQuestion.explanation ? (
+              {currentQuestion.explanation && (
                 <p
                   style={{
                     fontSize: "clamp(18px, 2vw, 28px)",
-                    margin: 0,
+                    margin: "0 0 20px 0",
                     opacity: 0.96,
+                    flexShrink: 0,
                   }}
                 >
                   {currentQuestion.explanation}
                 </p>
-              ) : (
-                <div />
               )}
 
               <div
                 style={{
-                  minHeight: 0,
                   display: "grid",
-                  gridTemplateColumns: currentQuestion.image_url ? "1.05fr 0.95fr" : "1fr",
-                  gap: 18,
-                  alignItems: "stretch",
-                  overflow: "hidden",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
                 }}
               >
-                {currentQuestion.image_url && (
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderQuestionMedia(currentQuestion, "tv")}
+                <div style={getTvRevealOptionStyle("A", currentQuestion.correct_answer)}>
+                  A - {currentQuestion.option_a}
+                </div>
+
+                <div style={getTvRevealOptionStyle("B", currentQuestion.correct_answer)}>
+                  B - {currentQuestion.option_b}
+                </div>
+
+                {currentQuestion.option_c && (
+                  <div style={getTvRevealOptionStyle("C", currentQuestion.correct_answer)}>
+                    C - {currentQuestion.option_c}
                   </div>
                 )}
 
-                <div
-                  style={{
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 14,
-                    alignContent: "center",
-                  }}
-                >
-                  <div style={getTvRevealOptionStyle("A", currentQuestion.correct_answer)}>
-                    A - {currentQuestion.option_a}
+                {currentQuestion.option_d && (
+                  <div style={getTvRevealOptionStyle("D", currentQuestion.correct_answer)}>
+                    D - {currentQuestion.option_d}
                   </div>
-
-                  <div style={getTvRevealOptionStyle("B", currentQuestion.correct_answer)}>
-                    B - {currentQuestion.option_b}
-                  </div>
-
-                  {currentQuestion.option_c && (
-                    <div style={getTvRevealOptionStyle("C", currentQuestion.correct_answer)}>
-                      C - {currentQuestion.option_c}
-                    </div>
-                  )}
-
-                  {currentQuestion.option_d && (
-                    <div style={getTvRevealOptionStyle("D", currentQuestion.correct_answer)}>
-                      D - {currentQuestion.option_d}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -3272,6 +3209,9 @@ export default function App() {
       </div>
     );
   }
+
+  return (
+    <div style={{ ...containerStyle, position: "relative" }}>
       {hostBanner && (
         <div
           style={{
