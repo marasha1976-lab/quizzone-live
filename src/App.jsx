@@ -1950,7 +1950,7 @@ export default function App() {
   const questionImageStyle = {
     display: "block",
     width: "100%",
-    maxHeight: 320,
+    maxHeight: 100,
     objectFit: "contain",
     background: "rgba(0,0,0,0.18)",
   };
@@ -2015,7 +2015,7 @@ export default function App() {
 
     if (!hasImage && !hasAudio) return null;
 
-    const imageMaxHeight = mode === "tv" ? 360 : mode === "host" ? 260 : 260;
+    const imageMaxHeight = mode === "tv" ? 260 : mode === "host" ? 160 : 130;
 
     return (
       <div
