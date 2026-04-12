@@ -222,19 +222,19 @@ function getTvOptionStyle(letter, extra = {}) {
     background: getAnswerColor(letter),
     border: "2px solid rgba(255,255,255,0.16)",
     borderRadius: 18,
-    padding: 20,
+    padding: 16,
     boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
     color: "white",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
     textAlign: "left",
-    lineHeight: 1.2,
+    lineHeight: 1.15,
     wordBreak: "break-word",
     overflowWrap: "anywhere",
-    minHeight: 90,
+    minHeight: 74,
     transition: "all 0.25s ease",
     ...extra,
   };
@@ -250,7 +250,7 @@ function getTvRevealOptionStyle(letter, correctAnswer) {
     boxShadow: isCorrect
       ? "0 0 0 4px rgba(255,255,255,0.12), 0 0 30px rgba(34,197,94,0.65)"
       : "0 8px 20px rgba(0,0,0,0.18)",
-    transform: isCorrect ? "scale(1.03)" : "scale(1)",
+    transform: isCorrect ? "scale(1.02)" : "scale(1)",
     opacity: isCorrect ? 1 : 0.45,
     filter: isCorrect ? "brightness(1.12)" : "brightness(0.7)",
   });
@@ -2015,14 +2015,7 @@ export default function App() {
 
     if (!hasImage && !hasAudio) return null;
 
-    let imageMaxHeight = 130;
-
-    if (mode === "tv-countdown") imageMaxHeight = 340;
-    if (mode === "tv-question") imageMaxHeight = 320;
-    if (mode === "tv-reveal") imageMaxHeight = 300;
-    if (mode === "tv-stats") imageMaxHeight = 260;
-    if (mode === "tv") imageMaxHeight = 300;
-    if (mode === "host") imageMaxHeight = 160;
+    const imageMaxHeight = mode === "tv" ? 260 : mode === "host" ? 160 : 130;
 
     return (
       <div
@@ -2030,14 +2023,8 @@ export default function App() {
           display: "grid",
           gap: 14,
           width: "100%",
-          maxWidth:
-            mode === "tv-question" || mode === "tv-countdown" || mode === "tv-reveal"
-              ? 1200
-              : mode === "tv"
-                ? 1000
-                : 700,
+          maxWidth: mode === "tv" ? 1000 : 700,
           margin: "0 auto 18px",
-          flexShrink: 0,
         }}
       >
         {hasImage && (
@@ -2047,17 +2034,6 @@ export default function App() {
               alt="Immagine domanda"
               style={{ ...questionImageStyle, maxHeight: imageMaxHeight }}
             />
-          </div>
-        )}
-
-        {hasAudio && mode === "tv-question" && (
-          <div style={questionAudioBoxStyle}>
-            <div style={{ fontWeight: "bold", marginBottom: 10 }}>
-              🔊 Audio domanda in riproduzione
-            </div>
-            <div style={{ opacity: 0.88 }}>
-              L'audio parte automaticamente sulla schermata TV.
-            </div>
           </div>
         )}
 
@@ -2441,9 +2417,59 @@ export default function App() {
   if (role === "tv") {
     const tvHasImage = Boolean(currentQuestion?.image_url);
     const tvHasAudio = Boolean(currentQuestion?.audio_url);
-    const tvHasMedia = tvHasImage || tvHasAudio;
-    const tvAnswerCount =
-      2 + (currentQuestion?.option_c ? 1 : 0) + (currentQuestion?.option_d ? 1 : 0);
+    const tvHasQuestionMedia = tvHasImage || tvHasAudio;
+
+    const renderTvMediaPanel = (question, mode = "question") => {
+      if (!question) return null;
+
+      const hasImage = Boolean(question.image_url);
+      const hasAudio = Boolean(question.audio_url);
+
+      if (!hasImage && !hasAudio) return null;
+
+      return (
+        <div
+          style={{
+            ...panelStyle,
+            padding: 14,
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          {hasImage ? (
+            <img
+              src={question.image_url}
+              alt="Immagine domanda"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: mode === "countdown" ? "contain" : "contain",
+                borderRadius: 16,
+                background: "rgba(0,0,0,0.18)",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                ...questionAudioBoxStyle,
+                width: "100%",
+                margin: 0,
+              }}
+            >
+              <div style={{ fontWeight: "bold", marginBottom: 10, fontSize: 30 }}>
+                🔊 Audio domanda in riproduzione
+              </div>
+              <div style={{ opacity: 0.88, fontSize: 22 }}>
+                L'audio parte automaticamente sulla schermata TV.
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
 
     return (
       <div
@@ -2897,22 +2923,39 @@ export default function App() {
           {!Boolean(game?.show_leaderboard) && effectivePhase === "countdown" && currentQuestion && (
             <div
               style={{
-                ...panelStyle,
-                padding: "24px 28px",
-                textAlign: "center",
                 height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
+                display: tvHasImage ? "grid" : "flex",
+                gridTemplateColumns: tvHasImage ? "1.15fr 0.85fr" : undefined,
+                gap: 16,
+                alignItems: "stretch",
                 overflow: "hidden",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv-countdown")}
-              <div style={{ fontSize: 38, marginBottom: 16, opacity: 0.9, flexShrink: 0 }}>
-                Prossima domanda tra...
-              </div>
-              <div style={{ fontSize: 96, fontWeight: "bold", color: GOLD, flexShrink: 0 }}>
-                {countdownTimeLeft}
+              {tvHasImage && renderTvMediaPanel(currentQuestion, "countdown")}
+
+              <div
+                style={{
+                  ...panelStyle,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  textAlign: "center",
+                  overflow: "hidden",
+                }}
+              >
+                {!tvHasImage && tvHasAudio && (
+                  <div style={{ width: "100%", maxWidth: 720, marginBottom: 18 }}>
+                    {renderTvMediaPanel(currentQuestion, "countdown")}
+                  </div>
+                )}
+
+                <div style={{ fontSize: "clamp(30px, 3vw, 46px)", marginBottom: 18, opacity: 0.9 }}>
+                  Prossima domanda tra...
+                </div>
+                <div style={{ fontSize: "clamp(84px, 10vw, 130px)", fontWeight: "bold", color: GOLD }}>
+                  {countdownTimeLeft}
+                </div>
               </div>
             </div>
           )}
@@ -2920,128 +2963,124 @@ export default function App() {
           {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
             <div
               style={{
-                ...panelStyle,
-                padding: "18px 22px",
                 height: "100%",
+                display: tvHasQuestionMedia ? "grid" : "flex",
+                gridTemplateColumns: tvHasQuestionMedia ? "1.02fr 1.18fr" : undefined,
+                gap: 16,
                 overflow: "hidden",
-                display: "grid",
-                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
-                gap: 12,
+                alignItems: "stretch",
               }}
             >
-              <div
-                style={{
-                  fontSize: "clamp(36px, 4.4vw, 64px)",
-                  fontWeight: "bold",
-                  color: localTimeLeft <= 5 ? GOLD : "white",
-                  textAlign: "center",
-                  lineHeight: 1,
-                  flexShrink: 0,
-                  animation:
-                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
-                }}
-              >
-                ⏳ {localTimeLeft}
-              </div>
-
-              {tvHasMedia && renderQuestionMedia(currentQuestion, "tv-question")}
-
-              <h2
-                style={{
-                  fontSize: tvHasMedia
-                    ? "clamp(22px, 2.2vw, 34px)"
-                    : "clamp(26px, 2.8vw, 42px)",
-                  lineHeight: 1.15,
-                  margin: 0,
-                  textAlign: "center",
-                  flexShrink: 0,
-                }}
-              >
-                {currentQuestion.question}
-              </h2>
+              {tvHasQuestionMedia && (
+                <div style={{ minHeight: 0, overflow: "hidden" }}>
+                  {renderTvMediaPanel(currentQuestion, "question")}
+                </div>
+              )}
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    tvAnswerCount <= 2
-                      ? "1fr 1fr"
-                      : "1fr 1fr",
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: 1240,
-                  margin: "0 auto",
+                  ...panelStyle,
+                  padding: 18,
                   minHeight: 0,
-                  alignContent: "stretch",
+                  overflow: "hidden",
+                  display: "grid",
+                  gridTemplateRows: "auto auto minmax(0, 1fr)",
+                  gap: 14,
                 }}
               >
                 <div
                   style={{
-                    ...getTvOptionStyle("A"),
-                    fontSize: tvHasMedia
-                      ? "clamp(18px, 1.65vw, 26px)"
-                      : "clamp(20px, 2vw, 30px)",
-                    padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                    minHeight: tvHasMedia ? 72 : 90,
-                    display: "flex",
-                    alignItems: "center",
-                    animation: "answerFlashPop 0.25s ease",
+                    fontSize: "clamp(34px, 4vw, 62px)",
+                    fontWeight: "bold",
+                    color: localTimeLeft <= 5 ? GOLD : "white",
+                    textAlign: "center",
+                    lineHeight: 1,
+                    animation:
+                      localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
                   }}
                 >
-                  A - {currentQuestion.option_a}
+                  ⏳ {localTimeLeft}
                 </div>
+
+                <h2
+                  style={{
+                    fontSize: tvHasQuestionMedia
+                      ? "clamp(22px, 2vw, 34px)"
+                      : "clamp(28px, 2.6vw, 44px)",
+                    lineHeight: 1.15,
+                    margin: 0,
+                    textAlign: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  {currentQuestion.question}
+                </h2>
 
                 <div
                   style={{
-                    ...getTvOptionStyle("B"),
-                    fontSize: tvHasMedia
-                      ? "clamp(18px, 1.65vw, 26px)"
-                      : "clamp(20px, 2vw, 30px)",
-                    padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                    minHeight: tvHasMedia ? 72 : 90,
-                    display: "flex",
-                    alignItems: "center",
-                    animation: "answerFlashPop 0.25s ease",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    minHeight: 0,
+                    alignContent: "start",
                   }}
                 >
-                  B - {currentQuestion.option_b}
+                  <div
+                    style={{
+                      ...getTvOptionStyle("A"),
+                      fontSize: tvHasQuestionMedia
+                        ? "clamp(18px, 1.45vw, 24px)"
+                        : "clamp(22px, 1.8vw, 30px)",
+                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    A - {currentQuestion.option_a}
+                  </div>
+
+                  <div
+                    style={{
+                      ...getTvOptionStyle("B"),
+                      fontSize: tvHasQuestionMedia
+                        ? "clamp(18px, 1.45vw, 24px)"
+                        : "clamp(22px, 1.8vw, 30px)",
+                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    B - {currentQuestion.option_b}
+                  </div>
+
+                  {currentQuestion.option_c && (
+                    <div
+                      style={{
+                        ...getTvOptionStyle("C"),
+                        fontSize: tvHasQuestionMedia
+                          ? "clamp(18px, 1.45vw, 24px)"
+                          : "clamp(22px, 1.8vw, 30px)",
+                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        animation: "answerFlashPop 0.25s ease",
+                      }}
+                    >
+                      C - {currentQuestion.option_c}
+                    </div>
+                  )}
+
+                  {currentQuestion.option_d && (
+                    <div
+                      style={{
+                        ...getTvOptionStyle("D"),
+                        fontSize: tvHasQuestionMedia
+                          ? "clamp(18px, 1.45vw, 24px)"
+                          : "clamp(22px, 1.8vw, 30px)",
+                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        animation: "answerFlashPop 0.25s ease",
+                      }}
+                    >
+                      D - {currentQuestion.option_d}
+                    </div>
+                  )}
                 </div>
-
-                {currentQuestion.option_c && (
-                  <div
-                    style={{
-                      ...getTvOptionStyle("C"),
-                      fontSize: tvHasMedia
-                        ? "clamp(18px, 1.65vw, 26px)"
-                        : "clamp(20px, 2vw, 30px)",
-                      padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                      minHeight: tvHasMedia ? 72 : 90,
-                      display: "flex",
-                      alignItems: "center",
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
-                    C - {currentQuestion.option_c}
-                  </div>
-                )}
-
-                {currentQuestion.option_d && (
-                  <div
-                    style={{
-                      ...getTvOptionStyle("D"),
-                      fontSize: tvHasMedia
-                        ? "clamp(18px, 1.65vw, 26px)"
-                        : "clamp(20px, 2vw, 30px)",
-                      padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                      minHeight: tvHasMedia ? 72 : 90,
-                      display: "flex",
-                      alignItems: "center",
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
-                    D - {currentQuestion.option_d}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -3049,57 +3088,71 @@ export default function App() {
           {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
             <div
               style={{
-                ...panelStyle,
-                padding: "22px 24px",
                 height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-start",
+                display: tvHasImage ? "grid" : "flex",
+                gridTemplateColumns: tvHasImage ? "0.98fr 1.22fr" : undefined,
+                gap: 16,
                 overflow: "hidden",
-                textAlign: "center",
-                animation: "correctRevealGlow 0.35s ease",
+                alignItems: "stretch",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv-stats")}
-
-              <h2
-                style={{
-                  fontSize: "clamp(28px, 3.6vw, 48px)",
-                  margin: "0 0 10px 0",
-                  flexShrink: 0,
-                }}
-              >
-                📊 Percentuali risposte
-              </h2>
+              {tvHasImage && (
+                <div style={{ minHeight: 0, overflow: "hidden" }}>
+                  {renderTvMediaPanel(currentQuestion, "stats")}
+                </div>
+              )}
 
               <div
                 style={{
-                  fontSize: "clamp(18px, 2vw, 28px)",
-                  color: GOLD,
-                  marginBottom: 18,
-                  flexShrink: 0,
-                }}
-              >
-                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 14,
-                  width: "100%",
-                  maxWidth: 1100,
-                  margin: "0 auto",
-                  flex: 1,
-                  alignContent: "center",
+                  ...panelStyle,
+                  padding: 18,
                   minHeight: 0,
+                  overflow: "hidden",
+                  display: "grid",
+                  gridTemplateRows: "auto auto minmax(0, 1fr)",
+                  gap: 14,
+                  textAlign: "center",
+                  animation: "correctRevealGlow 0.35s ease",
                 }}
               >
-                {renderStatsBar("A", currentQuestion.option_a)}
-                {renderStatsBar("B", currentQuestion.option_b)}
-                {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
-                {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
+                {!tvHasImage && tvHasAudio && (
+                  <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
+                    {renderTvMediaPanel(currentQuestion, "stats")}
+                  </div>
+                )}
+
+                <h2
+                  style={{
+                    fontSize: "clamp(28px, 3.2vw, 46px)",
+                    margin: 0,
+                  }}
+                >
+                  📊 Percentuali risposte
+                </h2>
+
+                <div
+                  style={{
+                    fontSize: "clamp(18px, 1.8vw, 28px)",
+                    color: GOLD,
+                  }}
+                >
+                  {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    minHeight: 0,
+                    alignContent: "start",
+                  }}
+                >
+                  {renderStatsBar("A", currentQuestion.option_a)}
+                  {renderStatsBar("B", currentQuestion.option_b)}
+                  {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
+                  {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
+                </div>
               </div>
             </div>
           )}
@@ -3107,110 +3160,126 @@ export default function App() {
           {game?.phase === "reveal" && currentQuestion && !game?.show_leaderboard && (
             <div
               style={{
-                ...panelStyle,
-                padding: "20px 22px",
                 height: "100%",
-                display: "grid",
-                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
-                gap: 12,
+                display: tvHasImage ? "grid" : "flex",
+                gridTemplateColumns: tvHasImage ? "0.98fr 1.22fr" : undefined,
+                gap: 16,
                 overflow: "hidden",
-                textAlign: "center",
-                animation: "correctRevealGlow 0.45s ease",
+                alignItems: "stretch",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv-reveal")}
-
-              <h2
-                style={{
-                  fontSize: "clamp(28px, 3.5vw, 50px)",
-                  color: GREEN,
-                  margin: 0,
-                  flexShrink: 0,
-                }}
-              >
-                ✅ Risposta corretta: {currentQuestion.correct_answer}
-              </h2>
-
-              {currentQuestion.explanation && (
-                <p
-                  style={{
-                    fontSize: "clamp(16px, 1.8vw, 26px)",
-                    margin: 0,
-                    opacity: 0.96,
-                    flexShrink: 0,
-                  }}
-                >
-                  {currentQuestion.explanation}
-                </p>
+              {tvHasImage && (
+                <div style={{ minHeight: 0, overflow: "hidden" }}>
+                  {renderTvMediaPanel(currentQuestion, "reveal")}
+                </div>
               )}
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: 1240,
-                  margin: "0 auto",
+                  ...panelStyle,
+                  padding: 18,
                   minHeight: 0,
-                  alignContent: "stretch",
+                  overflow: "hidden",
+                  display: "grid",
+                  gridTemplateRows: "auto auto minmax(0, 1fr)",
+                  gap: 14,
+                  textAlign: "center",
+                  animation: "correctRevealGlow 0.45s ease",
                 }}
               >
-                <div
-                  style={{
-                    ...getTvRevealOptionStyle("A", currentQuestion.correct_answer),
-                    fontSize: tvHasMedia
-                      ? "clamp(18px, 1.65vw, 26px)"
-                      : "clamp(20px, 2vw, 30px)",
-                    padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                    minHeight: tvHasMedia ? 72 : 90,
-                  }}
-                >
-                  A - {currentQuestion.option_a}
-                </div>
-
-                <div
-                  style={{
-                    ...getTvRevealOptionStyle("B", currentQuestion.correct_answer),
-                    fontSize: tvHasMedia
-                      ? "clamp(18px, 1.65vw, 26px)"
-                      : "clamp(20px, 2vw, 30px)",
-                    padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                    minHeight: tvHasMedia ? 72 : 90,
-                  }}
-                >
-                  B - {currentQuestion.option_b}
-                </div>
-
-                {currentQuestion.option_c && (
-                  <div
-                    style={{
-                      ...getTvRevealOptionStyle("C", currentQuestion.correct_answer),
-                      fontSize: tvHasMedia
-                        ? "clamp(18px, 1.65vw, 26px)"
-                        : "clamp(20px, 2vw, 30px)",
-                      padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                      minHeight: tvHasMedia ? 72 : 90,
-                    }}
-                  >
-                    C - {currentQuestion.option_c}
+                {!tvHasImage && tvHasAudio && (
+                  <div style={{ width: "100%", maxWidth: 760, margin: "0 auto" }}>
+                    {renderTvMediaPanel(currentQuestion, "reveal")}
                   </div>
                 )}
 
-                {currentQuestion.option_d && (
-                  <div
+                <div>
+                  <h2
                     style={{
-                      ...getTvRevealOptionStyle("D", currentQuestion.correct_answer),
-                      fontSize: tvHasMedia
-                        ? "clamp(18px, 1.65vw, 26px)"
-                        : "clamp(20px, 2vw, 30px)",
-                      padding: tvHasMedia ? "14px 16px" : "18px 20px",
-                      minHeight: tvHasMedia ? 72 : 90,
+                      fontSize: "clamp(28px, 3.2vw, 48px)",
+                      color: GREEN,
+                      margin: 0,
                     }}
                   >
-                    D - {currentQuestion.option_d}
-                  </div>
+                    ✅ Risposta corretta: {currentQuestion.correct_answer}
+                  </h2>
+                </div>
+
+                {currentQuestion.explanation ? (
+                  <p
+                    style={{
+                      fontSize: "clamp(16px, 1.5vw, 24px)",
+                      margin: 0,
+                      opacity: 0.96,
+                    }}
+                  >
+                    {currentQuestion.explanation}
+                  </p>
+                ) : (
+                  <div />
                 )}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    minHeight: 0,
+                    alignContent: "start",
+                  }}
+                >
+                  <div
+                    style={{
+                      ...getTvRevealOptionStyle("A", currentQuestion.correct_answer),
+                      fontSize: tvHasQuestionMedia
+                        ? "clamp(18px, 1.45vw, 24px)"
+                        : "clamp(22px, 1.8vw, 30px)",
+                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                    }}
+                  >
+                    A - {currentQuestion.option_a}
+                  </div>
+
+                  <div
+                    style={{
+                      ...getTvRevealOptionStyle("B", currentQuestion.correct_answer),
+                      fontSize: tvHasQuestionMedia
+                        ? "clamp(18px, 1.45vw, 24px)"
+                        : "clamp(22px, 1.8vw, 30px)",
+                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                    }}
+                  >
+                    B - {currentQuestion.option_b}
+                  </div>
+
+                  {currentQuestion.option_c && (
+                    <div
+                      style={{
+                        ...getTvRevealOptionStyle("C", currentQuestion.correct_answer),
+                        fontSize: tvHasQuestionMedia
+                          ? "clamp(18px, 1.45vw, 24px)"
+                          : "clamp(22px, 1.8vw, 30px)",
+                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                      }}
+                    >
+                      C - {currentQuestion.option_c}
+                    </div>
+                  )}
+
+                  {currentQuestion.option_d && (
+                    <div
+                      style={{
+                        ...getTvRevealOptionStyle("D", currentQuestion.correct_answer),
+                        fontSize: tvHasQuestionMedia
+                          ? "clamp(18px, 1.45vw, 24px)"
+                          : "clamp(22px, 1.8vw, 30px)",
+                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                      }}
+                    >
+                      D - {currentQuestion.option_d}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
