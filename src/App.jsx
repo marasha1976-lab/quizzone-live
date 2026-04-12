@@ -712,17 +712,23 @@ export default function App() {
 
     if (error) throw error;
 
-    setPlayers(data || []);
+    const sortedPlayers = [...(data || [])].sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
+
+    setPlayers(sortedPlayers);
 
     if (joinedPlayer?.id) {
-      const updatedJoined = (data || []).find((p) => p.id === joinedPlayer.id) || null;
+      const updatedJoined = sortedPlayers.find((p) => p.id === joinedPlayer.id) || null;
       if (updatedJoined) {
         setJoinedPlayer(updatedJoined);
         setJollyUsed(Boolean(updatedJoined.jolly_used));
       }
     }
 
-    return data || [];
+    return sortedPlayers;
   }
 
   async function loadAnswersOnly(gameId) {
@@ -743,8 +749,13 @@ export default function App() {
       .limit(12);
 
     if (error) throw error;
-    setLiveEvents(data || []);
-    return data || [];
+
+    const sortedEvents = [...(data || [])].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+
+    setLiveEvents(sortedEvents);
+    return sortedEvents;
   }
 
   async function loadAll({ silent = false } = {}) {
@@ -940,7 +951,16 @@ export default function App() {
       setStatus("Giocatore aggiunto");
       setPlayerName("");
 
-      await loadPlayersOnly(freshGame.id);
+      setPlayers((prev) => {
+        const withoutDup = prev.filter((p) => p.id !== data.id);
+        const next = [...withoutDup, data];
+        return next.sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        });
+      });
+
       await loadEventsOnly(freshGame.id);
     } catch (error) {
       console.error(error);
@@ -1393,20 +1413,68 @@ export default function App() {
       realtimeChannelRef.current = null;
     }
 
+    const sortPlayersRealtime = (list) =>
+      [...list].sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      });
+
+    const sortEventsRealtime = (list) =>
+      [...list]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 12);
+
     const channel = supabase
       .channel(`quiz-live-${game.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "games", filter: `id=eq.${game.id}` },
         async (payload) => {
-          if (payload?.new) setGame(payload.new);
-          else await loadGameOnly();
+          if (payload?.new) {
+            setGame(payload.new);
+          } else {
+            await loadGameOnly();
+          }
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "players", filter: `game_id=eq.${game.id}` },
-        async () => {
+        async (payload) => {
+          const eventType = payload?.eventType;
+          const newRow = payload?.new;
+          const oldRow = payload?.old;
+
+          if (eventType === "INSERT" && newRow) {
+            setPlayers((prev) =>
+              sortPlayersRealtime([...prev.filter((p) => p.id !== newRow.id), newRow])
+            );
+            return;
+          }
+
+          if (eventType === "UPDATE" && newRow) {
+            setPlayers((prev) =>
+              sortPlayersRealtime(prev.map((p) => (p.id === newRow.id ? newRow : p)))
+            );
+
+            if (joinedPlayer?.id === newRow.id) {
+              setJoinedPlayer(newRow);
+              setJollyUsed(Boolean(newRow.jolly_used));
+            }
+            return;
+          }
+
+          if (eventType === "DELETE" && oldRow) {
+            setPlayers((prev) => prev.filter((p) => p.id !== oldRow.id));
+
+            if (joinedPlayer?.id === oldRow.id) {
+              setJoinedPlayer(null);
+              setJollyUsed(false);
+            }
+            return;
+          }
+
           await loadPlayersOnly(game.id);
         }
       )
@@ -1427,11 +1495,39 @@ export default function App() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "live_events", filter: `game_id=eq.${game.id}` },
-        async () => {
+        async (payload) => {
+          const eventType = payload?.eventType;
+          const newRow = payload?.new;
+          const oldRow = payload?.old;
+
+          if (eventType === "INSERT" && newRow) {
+            setLiveEvents((prev) =>
+              sortEventsRealtime([newRow, ...prev.filter((e) => e.id !== newRow.id)])
+            );
+            return;
+          }
+
+          if (eventType === "UPDATE" && newRow) {
+            setLiveEvents((prev) =>
+              sortEventsRealtime(prev.map((e) => (e.id === newRow.id ? newRow : e)))
+            );
+            return;
+          }
+
+          if (eventType === "DELETE" && oldRow) {
+            setLiveEvents((prev) => prev.filter((e) => e.id !== oldRow.id));
+            return;
+          }
+
           await loadEventsOnly(game.id);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          loadPlayersOnly(game.id).catch(() => {});
+          loadEventsOnly(game.id).catch(() => {});
+        }
+      });
 
     realtimeChannelRef.current = channel;
 
@@ -1441,7 +1537,7 @@ export default function App() {
         realtimeChannelRef.current = null;
       }
     };
-  }, [game?.id]);
+  }, [game?.id, joinedPlayer?.id]);
 
   useEffect(() => {
     if (fallbackRefreshRef.current) {
@@ -1449,9 +1545,12 @@ export default function App() {
       fallbackRefreshRef.current = null;
     }
 
+    if (!game?.id) return;
+
     fallbackRefreshRef.current = setInterval(() => {
-      loadAll({ silent: true });
-    }, 30000);
+      loadPlayersOnly(game.id).catch(() => {});
+      loadEventsOnly(game.id).catch(() => {});
+    }, 5000);
 
     return () => {
       if (fallbackRefreshRef.current) {
@@ -1459,7 +1558,7 @@ export default function App() {
         fallbackRefreshRef.current = null;
       }
     };
-  }, [joinedPlayer?.id, game?.id]);
+  }, [game?.id]);
 
   useEffect(() => {
     if (effectivePhase === "countdown" || effectivePhase === "question") {
