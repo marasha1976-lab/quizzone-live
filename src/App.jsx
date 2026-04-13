@@ -216,22 +216,21 @@ function getPlayerAnswerButtonStyle(letter, disabled = false, isSelected = false
     animation: isSelected ? "selectedPulse 1s infinite" : "none",
   };
 }
-
 function getTvOptionStyle(letter, extra = {}) {
   return {
     background: getAnswerColor(letter),
     border: "2px solid rgba(255,255,255,0.16)",
-    borderRadius: 16,
-    padding: "12px 14px",
+    borderRadius: 18,
+    padding: "16px 18px",
     boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
-    fontSize: "clamp(14px, 1.35vw, 26px)",
+    fontSize: "clamp(18px, 1.5vw, 30px)",
     fontWeight: "bold",
     color: "white",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
     textAlign: "left",
-    lineHeight: 1.08,
+    lineHeight: 1.15,
     wordBreak: "break-word",
     overflowWrap: "anywhere",
     whiteSpace: "normal",
@@ -242,6 +241,7 @@ function getTvOptionStyle(letter, extra = {}) {
     ...extra,
   };
 }
+
 function getTvRevealOptionStyle(letter, correctAnswer) {
   const isCorrect = letter === correctAnswer;
 
@@ -257,7 +257,6 @@ function getTvRevealOptionStyle(letter, correctAnswer) {
     filter: isCorrect ? "brightness(1.12)" : "brightness(0.7)",
   });
 }
-
 function useCountdownAudio(nowProvider) {
   const audioRef = useRef(null);
   const syncIntervalRef = useRef(null);
@@ -2922,96 +2921,156 @@ export default function App() {
             </div>
           )}
 
-                           {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
-  <div
-    style={{
-      ...panelStyle,
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      padding: 20,
-      gap: 16,
-      overflow: "hidden",
-    }}
-  >
-    {/* TIMER */}
-    <div
-      style={{
-        textAlign: "center",
-        fontSize: "clamp(40px, 5vw, 70px)",
-        fontWeight: "bold",
-        color: localTimeLeft <= 5 ? GOLD : "white",
-      }}
-    >
-      ⏳ {localTimeLeft}
-    </div>
+                                      {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
+            <div
+              style={{
+                ...panelStyle,
+                height: "100%",
+                minHeight: 0,
+                display: "grid",
+                gridTemplateRows: "auto auto minmax(0, 1fr) minmax(0, 1.1fr)",
+                gap: 14,
+                padding: 18,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  textAlign: "center",
+                  fontSize: "clamp(34px, 4.8vw, 64px)",
+                  fontWeight: "bold",
+                  color: localTimeLeft <= 5 ? GOLD : "white",
+                  lineHeight: 1,
+                }}
+              >
+                ⏳ {localTimeLeft}
+              </div>
 
-    {/* IMMAGINE (se c'è) */}
-    {currentQuestion.image_url && (
-      <div
-        style={{
-          flex: "0 0 auto",
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
-        <img
-          src={currentQuestion.image_url}
-          style={{
-            maxHeight: "28vh",
-            width: "auto",
-            maxWidth: "100%",
-            objectFit: "contain",
-            borderRadius: 12,
-          }}
-        />
-      </div>
-    )}
+              <div
+                style={{
+                  ...panelStyle,
+                  padding: "14px 20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                  minHeight: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: currentQuestion.image_url
+                      ? "clamp(20px, 2vw, 34px)"
+                      : "clamp(24px, 2.5vw, 40px)",
+                    fontWeight: "bold",
+                    lineHeight: 1.15,
+                    wordBreak: "break-word",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {currentQuestion.question}
+                </div>
+              </div>
 
-    {/* DOMANDA */}
-    <div
-      style={{
-        textAlign: "center",
-        fontSize: "clamp(24px, 2.8vw, 40px)",
-        fontWeight: "bold",
-        lineHeight: 1.2,
-      }}
-    >
-      {currentQuestion.question}
-    </div>
+              {currentQuestion.image_url ? (
+                <div
+                  style={{
+                    ...panelStyle,
+                    padding: 10,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <img
+                    src={currentQuestion.image_url}
+                    alt="Immagine domanda"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      objectFit: "contain",
+                      borderRadius: 14,
+                      background: "rgba(0,0,0,0.18)",
+                    }}
+                  />
+                </div>
+              ) : currentQuestion.audio_url ? (
+                <div
+                  style={{
+                    ...questionAudioBoxStyle,
+                    margin: 0,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 14,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      fontSize: "clamp(24px, 2vw, 34px)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    🔊 Audio domanda in riproduzione
+                  </div>
+                  <div
+                    style={{
+                      opacity: 0.88,
+                      fontSize: "clamp(14px, 1.1vw, 20px)",
+                    }}
+                  >
+                    L'audio parte automaticamente sulla schermata TV.
+                  </div>
+                </div>
+              ) : (
+                <div />
+              )}
 
-    {/* RISPOSTE */}
-    <div
-      style={{
-        flex: 1,
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 12,
-      }}
-    >
-      <div style={getTvOptionStyle("A")}>
-        A - {currentQuestion.option_a}
-      </div>
+              <div
+                style={{
+                  minHeight: 0,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateRows:
+                    currentQuestion.option_c || currentQuestion.option_d ? "1fr 1fr" : "1fr",
+                  gap: 12,
+                  overflow: "hidden",
+                }}
+              >
+                <div style={getTvOptionStyle("A")}>
+                  A - {currentQuestion.option_a}
+                </div>
 
-      <div style={getTvOptionStyle("B")}>
-        B - {currentQuestion.option_b}
-      </div>
+                <div style={getTvOptionStyle("B")}>
+                  B - {currentQuestion.option_b}
+                </div>
 
-      {currentQuestion.option_c && (
-        <div style={getTvOptionStyle("C")}>
-          C - {currentQuestion.option_c}
-        </div>
-      )}
+                {currentQuestion.option_c ? (
+                  <div style={getTvOptionStyle("C")}>
+                    C - {currentQuestion.option_c}
+                  </div>
+                ) : (
+                  <div />
+                )}
 
-      {currentQuestion.option_d && (
-        <div style={getTvOptionStyle("D")}>
-          D - {currentQuestion.option_d}
-        </div>
-      )}
-    </div>
-  </div>
-)}
-          {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
+                {currentQuestion.option_d ? (
+                  <div style={getTvOptionStyle("D")}>
+                    D - {currentQuestion.option_d}
+                  </div>
+                ) : (
+                  <div />
+                )}
+              </div>
+            </div>
+          )}         {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
             <div
               style={{
                 height: "100%",
