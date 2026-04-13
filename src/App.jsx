@@ -198,7 +198,7 @@ function getCountdownSecondsBeforeStart(game, nowMs = Date.now()) {
 }
 
 function getGameTitle(game) {
-  return game?.title || "Il Quizzone di Simone";
+  return game?.title || "test vercel";
 }
 
 function getAnswerColor(letter) {
