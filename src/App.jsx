@@ -1,3 +1,7 @@
+/* =====================================================
+   PARTE 1 - IMPORT, CONFIGURAZIONE, COSTANTI E DATI DEMO
+===================================================== */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Papa from "papaparse";
@@ -117,6 +121,9 @@ const playerBackgroundLogoImageStyle = {
   maxWidth: 520,
   height: "auto",
 };
+/* =====================================================
+   PARTE 2 - FUNZIONI UTILI GENERALI
+===================================================== */
 
 function toMs(value) {
   if (value == null) return NaN;
@@ -222,22 +229,19 @@ function getTvOptionStyle(letter, extra = {}) {
     background: getAnswerColor(letter),
     border: "2px solid rgba(255,255,255,0.16)",
     borderRadius: 18,
-    padding: "16px 18px",
+    padding: 20,
     boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
-    fontSize: "clamp(18px, 1.5vw, 30px)",
+    fontSize: 28,
     fontWeight: "bold",
     color: "white",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
     textAlign: "left",
-    lineHeight: 1.15,
+    lineHeight: 1.2,
     wordBreak: "break-word",
     overflowWrap: "anywhere",
-    whiteSpace: "normal",
-    minHeight: 0,
-    height: "100%",
-    overflow: "hidden",
+    minHeight: 90,
     transition: "all 0.25s ease",
     ...extra,
   };
@@ -258,6 +262,9 @@ function getTvRevealOptionStyle(letter, correctAnswer) {
     filter: isCorrect ? "brightness(1.12)" : "brightness(0.7)",
   });
 }
+/* =====================================================
+   PARTE 3 - HOOK AUDIO
+===================================================== */
 
 function useCountdownAudio(nowProvider) {
   const audioRef = useRef(null);
@@ -403,6 +410,9 @@ function useRevealAudio() {
 
   return { playRevealAudio };
 }
+/* =====================================================
+   PARTE 4 - COMPONENTE APP: STATE, REF, TEMPO E MEMO PRINCIPALI
+===================================================== */
 
 export default function App() {
   const [role, setRole] = useState(null);
@@ -611,6 +621,9 @@ export default function App() {
     if (players.length <= 10) return 120;
     return 110;
   }, [players.length]);
+/* =====================================================
+   PARTE 5 - CARICAMENTO DATI, GAME SETUP, EVENTI E IMPORT CSV
+===================================================== */
 
   function normalizeQuestionTime() {
     return COUNTDOWN_DURATION;
@@ -733,39 +746,1718 @@ export default function App() {
 
     return sortedPlayers;
   }
-  const TV_BASE_WIDTH = 1920;
-  const TV_BASE_HEIGHT = 1080;
-  const [tvScale, setTvScale] = useState(1);
+
+  async function loadAnswersOnly(gameId) {
+    if (!gameId) return [];
+    const { data, error } = await supabase.from("answers").select("*").eq("game_id", gameId);
+    if (error) throw error;
+    setAnswers(data || []);
+    return data || [];
+  }
+
+  async function loadEventsOnly(gameId) {
+    if (!gameId) return [];
+    const { data, error } = await supabase
+      .from("live_events")
+      .select("*")
+      .eq("game_id", gameId)
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+    if (error) throw error;
+
+    const sortedEvents = [...(data || [])].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+
+    setLiveEvents(sortedEvents);
+    return sortedEvents;
+  }
+
+  async function loadAll({ silent = false } = {}) {
+    try {
+      if (!silent) setIsLoading(true);
+      const g = await loadGameOnly();
+
+      await Promise.all([
+        loadQuestionsOnly(g.id),
+        loadPlayersOnly(g.id),
+        loadAnswersOnly(g.id),
+        loadEventsOnly(g.id),
+      ]);
+
+      if (!silent) setStatus("Dati caricati");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore caricamento: " + error.message);
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  }
+
+  function normalizeCsvRows(rows) {
+    return rows
+      .filter((row) => row.question && row.correct_answer)
+      .map((row, index) => {
+        const type = String(row.type || "multiple").trim().toLowerCase();
+        const cleanedType =
+          type === "truefalse" || type === "vero_falso" ? "truefalse" : "multiple";
+
+        return {
+          position: index,
+          round: Number(row.round || 1),
+          type: cleanedType,
+          question: String(row.question || "").trim(),
+          option_a:
+            cleanedType === "truefalse"
+              ? String(row.option_a || "Vero").trim() || "Vero"
+              : String(row.option_a || "").trim(),
+          option_b:
+            cleanedType === "truefalse"
+              ? String(row.option_b || "Falso").trim() || "Falso"
+              : String(row.option_b || "").trim(),
+          option_c:
+            cleanedType === "truefalse" ? null : String(row.option_c || "").trim() || null,
+          option_d:
+            cleanedType === "truefalse" ? null : String(row.option_d || "").trim() || null,
+          correct_answer: String(row.correct_answer || "").trim().toUpperCase(),
+          explanation: String(row.explanation || "").trim(),
+          time_limit: COUNTDOWN_DURATION,
+          points: Number(row.points || 100),
+          image_url: String(row.image_url || "").trim(),
+          audio_url: String(row.audio_url || "").trim(),
+        };
+      });
+  }
+
+  async function importCsvQuestions(file) {
+    if (!file || !game) return;
+    setStatus("Import CSV in corso...");
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const parsedRows = normalizeCsvRows(results.data || []);
+
+          if (!parsedRows.length) {
+            setStatus("CSV vuoto o non valido");
+            return;
+          }
+
+          await supabase.from("answers").delete().eq("game_id", game.id);
+          await supabase.from("questions").delete().eq("game_id", game.id);
+
+          const rowsToInsert = parsedRows.map((row) => ({
+            game_id: game.id,
+            ...row,
+          }));
+
+          const { error } = await supabase.from("questions").insert(rowsToInsert);
+          if (error) throw error;
+
+          await supabase
+            .from("games")
+            .update({
+              phase: "lobby",
+              current_question_index: 0,
+              time_left: 0,
+              countdown_started_at_ms: null,
+              question_started_at_ms: null,
+              question_started_at: null,
+              question_duration: null,
+              show_leaderboard: false,
+            })
+            .eq("id", game.id);
+
+          await addLiveEvent(
+            game.id,
+            "csv_imported",
+            `📁 Importate ${parsedRows.length} domande da CSV`
+          );
+
+          setSelectedAnswer(null);
+          setJollyUsed(false);
+          setFinalRevealIndex(-1);
+          submitLockRef.current = false;
+          jollyLockRef.current = false;
+          phaseSwitchInFlightRef.current = false;
+          setAnswers([]);
+
+          await loadAll();
+          setStatus(`Import completato: ${parsedRows.length} domande`);
+        } catch (error) {
+          console.error(error);
+          setStatus("Errore import CSV: " + error.message);
+        }
+      },
+      error: () => {
+        setStatus("Errore lettura CSV");
+      },
+    });
+  }
+/* =====================================================
+   PARTE 6 - AZIONI PRINCIPALI DEL QUIZ
+===================================================== */
+
+  async function joinGame() {
+    if (!playerName.trim()) {
+      setStatus("Scrivi un nome squadra");
+      return;
+    }
+
+    try {
+      const { data: freshGame, error: freshGameError } = await supabase
+        .from("games")
+        .select("id, phase")
+        .eq("code", GAME_CODE)
+        .single();
+
+      if (freshGameError) throw freshGameError;
+
+      if (freshGame.phase !== "lobby") {
+        setStatus("Partita in corso, attendi una nuova partita");
+        return;
+      }
+
+      const trimmedName = playerName.trim().replace(/\s+/g, " ");
+
+      const { data: existing, error: existingError } = await supabase
+        .from("players")
+        .select("*")
+        .eq("game_id", freshGame.id)
+        .ilike("name", trimmedName)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+
+      if (existing) {
+        setStatus("Nome squadra già presente, scegline un altro");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("players")
+        .insert([
+          {
+            game_id: freshGame.id,
+            name: trimmedName,
+            score: 0,
+            jolly_used: false,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === "23505") {
+          setStatus("Nome già usato, scegline un altro");
+          return;
+        }
+        throw error;
+      }
+
+      await addLiveEvent(
+        freshGame.id,
+        "player_joined",
+        `🎉 ${trimmedName} è entrato nel quiz!`,
+        trimmedName
+      );
+
+      setJoinedPlayer(data);
+      setJollyUsed(false);
+      setStatus("Giocatore aggiunto");
+      setPlayerName("");
+
+      setPlayers((prev) => {
+        const withoutDup = prev.filter((p) => p.id !== data.id);
+        const next = [...withoutDup, data];
+        return next.sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        });
+      });
+
+      await loadEventsOnly(freshGame.id);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore inserimento: " + error.message);
+    }
+  }
+
+  async function startQuiz() {
+    if (!game || !questions.length) return;
+
+    try {
+      await supabase.from("answers").delete().eq("game_id", game.id);
+      await supabase.from("players").update({ score: 0, jolly_used: false }).eq("game_id", game.id);
+
+      const firstQuestion = questions.find((q) => q.position === 0) || questions[0];
+      const firstTime = normalizeQuestionTime(firstQuestion);
+
+      const countdownStartedAtMs = Math.round(syncedNowRef.current);
+      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+
+      const { data: updatedGame, error } = await supabase
+        .from("games")
+        .update({
+          phase: "countdown",
+          current_question_index: 0,
+          time_left: firstTime,
+          countdown_started_at_ms: countdownStartedAtMs,
+          question_started_at_ms: questionStartedAtMs,
+          question_started_at: new Date(questionStartedAtMs).toISOString(),
+          question_duration: firstTime,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(game.id, "quiz_started", "🚀 Il quiz è iniziato!");
+
+      setGame(updatedGame);
+      setSelectedAnswer(null);
+      setJollyUsed(false);
+      setFinalRevealIndex(-1);
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setAnswers([]);
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+
+      setStatus("Quiz avviato");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore avvio: " + error.message);
+    }
+  }
+
+  async function revealAnswer() {
+    if (!game) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          phase: "reveal",
+          countdown_started_at_ms: null,
+          question_started_at_ms: null,
+          question_started_at: null,
+          question_duration: null,
+          time_left: 0,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(
+        game.id,
+        "answer_revealed",
+        `✅ Risposta corretta: ${currentQuestion?.correct_answer || "-"}`
+      );
+
+      setGame(data);
+      phaseSwitchInFlightRef.current = false;
+      await loadEventsOnly(game.id);
+      setStatus("Risposta mostrata");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore reveal: " + error.message);
+    }
+  }
+
+  async function nextQuestion() {
+    if (!game) return;
+
+    const nextIndex = game.current_question_index + 1;
+
+    if (nextIndex >= questions.length) {
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: false,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setFinalRevealIndex(-1);
+        phaseSwitchInFlightRef.current = false;
+        await loadEventsOnly(game.id);
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
+      return;
+    }
+
+    const q = questions.find((item) => item.position === nextIndex);
+    if (!q) return;
+
+    try {
+      const duration = normalizeQuestionTime(q);
+      const countdownStartedAtMs = Math.round(syncedNowRef.current);
+      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+
+      const { data: updatedGame, error } = await supabase
+        .from("games")
+        .update({
+          phase: "countdown",
+          current_question_index: nextIndex,
+          time_left: duration,
+          countdown_started_at_ms: countdownStartedAtMs,
+          question_started_at_ms: questionStartedAtMs,
+          question_started_at: new Date(questionStartedAtMs).toISOString(),
+          question_duration: duration,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(game.id, "next_question", `🎯 Nuova domanda: ${nextIndex + 1}`);
+
+      setSelectedAnswer(null);
+      setGame(updatedGame);
+      setStatus("Domanda successiva");
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setTvRevealEffect(null);
+      setTvJollyEffect(null);
+      lastTvQuestionAudioKeyRef.current = null;
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore next question: " + error.message);
+    }
+  }
+
+  async function resetAll() {
+    if (!game) return;
+
+    try {
+      await supabase.from("answers").delete().eq("game_id", game.id);
+      await supabase.from("players").delete().eq("game_id", game.id);
+      await supabase.from("questions").delete().eq("game_id", game.id);
+      await supabase.from("live_events").delete().eq("game_id", game.id);
+
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          phase: "lobby",
+          current_question_index: 0,
+          time_left: 0,
+          countdown_started_at_ms: null,
+          question_started_at_ms: null,
+          question_started_at: null,
+          question_duration: null,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setJoinedPlayer(null);
+      setSelectedAnswer(null);
+      setJollyUsed(false);
+      setPlayers([]);
+      setQuestions([]);
+      setAnswers([]);
+      setLiveEvents([]);
+      setFinalRevealIndex(-1);
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setGame(data);
+      setTvAudioReady(false);
+      setHideTvAudioOverlay(false);
+      lastTvQuestionAudioKeyRef.current = null;
+
+      await loadAll({ silent: true });
+      setStatus("Partita resettata");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore reset: " + error.message);
+    }
+  }
+
+  async function toggleLeaderboardOnTv() {
+    if (!game) return;
+
+    try {
+      const newValue = !Boolean(game.show_leaderboard);
+
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          show_leaderboard: newValue,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setGame(data);
+      setStatus(newValue ? "Classifica mostrata in TV" : "Classifica nascosta in TV");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore classifica TV: " + error.message);
+    }
+  }
+
+  async function useJollyCard() {
+    if (!joinedPlayer || !game || !currentQuestion) return;
+    if (jollyLockRef.current) return;
+
+    if (effectivePhase !== "question" || getRemainingMs(game, syncedNowRef.current) <= 0) {
+      setStatus("Il JOLLY si usa durante la domanda");
+      return;
+    }
+
+    if (jollyUsed || joinedPlayer.jolly_used) {
+      setStatus("JOLLY già usato");
+      return;
+    }
+
+    try {
+      jollyLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("id")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setStatus("Hai già risposto a questa domanda");
+        return;
+      }
+
+      const gainedPoints = 100;
+      const currentScore = Number(joinedPlayer.score || 0);
+
+      const { error: insertAnswerError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: currentQuestion.correct_answer,
+          is_correct: true,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertAnswerError) throw insertAnswerError;
+
+      const { data: updatedPlayer, error: updatePlayerError } = await supabase
+        .from("players")
+        .update({
+          score: currentScore + gainedPoints,
+          jolly_used: true,
+        })
+        .eq("id", joinedPlayer.id)
+        .select()
+        .single();
+
+      if (updatePlayerError) throw updatePlayerError;
+
+      await addLiveEvent(
+        game.id,
+        "jolly_used",
+        `🔥 ${joinedPlayer.name} ha usato il JOLLY! +100 punti`,
+        joinedPlayer.name
+      );
+
+      setJoinedPlayer(updatedPlayer);
+      setJollyUsed(true);
+      setSelectedAnswer(currentQuestion.correct_answer);
+      setAnswerFeedback({ type: "correct", points: gainedPoints });
+      setStatus("💥 JOLLY USATO: risposta corretta automatica! +100 punti");
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore JOLLY: " + error.message);
+    } finally {
+      jollyLockRef.current = false;
+    }
+  }
+
+  async function submitAnswer(letter) {
+    if (!joinedPlayer || !currentQuestion || !game) return;
+    if (submitLockRef.current) return;
+    if (effectivePhase !== "question") return;
+    if (selectedAnswer) return;
+    if (getRemainingMs(game, syncedNowRef.current) <= 0) return;
+
+    try {
+      submitLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("*")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setSelectedAnswer(already.answer);
+        setStatus("Hai già risposto");
+        return;
+      }
+
+      const isCorrect = letter === currentQuestion.correct_answer;
+      let gainedPoints = 0;
+
+      if (isCorrect) {
+        const totalTime = COUNTDOWN_DURATION;
+        const remainingSecondsExact = Math.max(0, getRemainingMs(game, syncedNowRef.current) / 1000);
+        const basePoints = 100;
+        const speedRatio = totalTime > 0 ? remainingSecondsExact / totalTime : 0;
+        const speedBonus = Math.round(speedRatio * 100);
+        gainedPoints = basePoints + speedBonus;
+      }
+
+      const { error: insertError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: letter,
+          is_correct: isCorrect,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      if (isCorrect) {
+        const currentScore = Number(joinedPlayer.score || 0);
+
+        const { data: updatedPlayer, error: updateError } = await supabase
+          .from("players")
+          .update({ score: currentScore + gainedPoints })
+          .eq("id", joinedPlayer.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        setJoinedPlayer(updatedPlayer);
+      }
+
+      setSelectedAnswer(letter);
+      setAnswerFeedback({ type: isCorrect ? "correct" : "wrong", points: gainedPoints });
+      setStatus(isCorrect ? `Corretto! +${gainedPoints} punti` : "Risposta inviata");
+
+      await Promise.all([loadPlayersOnly(game.id), loadAnswersOnly(game.id)]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore risposta: " + error.message);
+    } finally {
+      submitLockRef.current = false;
+    }
+  }
+/* =====================================================
+   PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
+===================================================== */
+
+  useEffect(() => {
+    async function bootstrap() {
+      try {
+        setIsLoading(true);
+        const g = await loadGameOnly();
+        await ensureQuestions(g.id);
+
+        await Promise.all([
+          loadQuestionsOnly(g.id),
+          loadPlayersOnly(g.id),
+          loadAnswersOnly(g.id),
+          loadEventsOnly(g.id),
+        ]);
+
+        setStatus("Dati caricati");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore caricamento: " + error.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    bootstrap();
+  }, []);
+
+  useEffect(() => {
+    if (!game?.id) return;
+
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    const sortPlayersRealtime = (list) =>
+      [...list].sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      });
+
+    const sortEventsRealtime = (list) =>
+      [...list]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 12);
+
+    const channel = supabase
+      .channel(`quiz-live-${game.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "games", filter: `id=eq.${game.id}` },
+        async (payload) => {
+          if (payload?.new) {
+            setGame(payload.new);
+          } else {
+            await loadGameOnly();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "players", filter: `game_id=eq.${game.id}` },
+        async (payload) => {
+          const eventType = payload?.eventType;
+          const newRow = payload?.new;
+          const oldRow = payload?.old;
+
+          if (eventType === "INSERT" && newRow) {
+            setPlayers((prev) =>
+              sortPlayersRealtime([...prev.filter((p) => p.id !== newRow.id), newRow])
+            );
+            return;
+          }
+
+          if (eventType === "UPDATE" && newRow) {
+            setPlayers((prev) =>
+              sortPlayersRealtime(prev.map((p) => (p.id === newRow.id ? newRow : p)))
+            );
+
+            if (joinedPlayer?.id === newRow.id) {
+              setJoinedPlayer(newRow);
+              setJollyUsed(Boolean(newRow.jolly_used));
+            }
+            return;
+          }
+
+          if (eventType === "DELETE" && oldRow) {
+            setPlayers((prev) => prev.filter((p) => p.id !== oldRow.id));
+
+            if (joinedPlayer?.id === oldRow.id) {
+              setJoinedPlayer(null);
+              setJollyUsed(false);
+            }
+            return;
+          }
+
+          await loadPlayersOnly(game.id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "questions", filter: `game_id=eq.${game.id}` },
+        async () => {
+          await loadQuestionsOnly(game.id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
+        async () => {
+          await loadAnswersOnly(game.id);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "live_events", filter: `game_id=eq.${game.id}` },
+        async (payload) => {
+          const eventType = payload?.eventType;
+          const newRow = payload?.new;
+          const oldRow = payload?.old;
+
+          if (eventType === "INSERT" && newRow) {
+            setLiveEvents((prev) =>
+              sortEventsRealtime([newRow, ...prev.filter((e) => e.id !== newRow.id)])
+            );
+            return;
+          }
+
+          if (eventType === "UPDATE" && newRow) {
+            setLiveEvents((prev) =>
+              sortEventsRealtime(prev.map((e) => (e.id === newRow.id ? newRow : e)))
+            );
+            return;
+          }
+
+          if (eventType === "DELETE" && oldRow) {
+            setLiveEvents((prev) => prev.filter((e) => e.id !== oldRow.id));
+            return;
+          }
+
+          await loadEventsOnly(game.id);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          loadPlayersOnly(game.id).catch(() => {});
+          loadEventsOnly(game.id).catch(() => {});
+        }
+      });
+
+    realtimeChannelRef.current = channel;
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [game?.id, joinedPlayer?.id]);
+
+  useEffect(() => {
+    if (fallbackRefreshRef.current) {
+      clearInterval(fallbackRefreshRef.current);
+      fallbackRefreshRef.current = null;
+    }
+
+    if (!game?.id) return;
+
+    fallbackRefreshRef.current = setInterval(() => {
+      loadPlayersOnly(game.id).catch(() => {});
+      loadEventsOnly(game.id).catch(() => {});
+    }, 5000);
+
+    return () => {
+      if (fallbackRefreshRef.current) {
+        clearInterval(fallbackRefreshRef.current);
+        fallbackRefreshRef.current = null;
+      }
+    };
+  }, [game?.id]);
+
+  useEffect(() => {
+    if (effectivePhase === "countdown" || effectivePhase === "question") {
+      setSelectedAnswer(null);
+      setAnswerFeedback(null);
+      submitLockRef.current = false;
+    }
+  }, [game?.current_question_index, effectivePhase]);
+
+  useEffect(() => {
+    if (!answerFeedback) return;
+    const timeout = setTimeout(() => {
+      setAnswerFeedback(null);
+    }, 1200);
+    return () => clearTimeout(timeout);
+  }, [answerFeedback]);
+
+  useEffect(() => {
+    if (role !== "host") return;
+    if (!game?.id) return;
+
+    if (game.phase !== "countdown") {
+      phaseSwitchInFlightRef.current = false;
+      return;
+    }
+
+    const questionStartedAtMs = toMs(game.question_started_at_ms);
+    if (!Number.isFinite(questionStartedAtMs)) return;
+    if (syncedNowMs < questionStartedAtMs) return;
+    if (phaseSwitchInFlightRef.current) return;
+
+    phaseSwitchInFlightRef.current = true;
+
+    (async () => {
+      try {
+        const { data: freshGame, error: freshGameError } = await supabase
+          .from("games")
+          .select("*")
+          .eq("id", game.id)
+          .single();
+
+        if (freshGameError) throw freshGameError;
+        if (!freshGame || freshGame.phase !== "countdown") return;
+
+        const freshQuestionStartMs = toMs(freshGame.question_started_at_ms);
+        if (!Number.isFinite(freshQuestionStartMs)) return;
+        if (syncedNowRef.current < freshQuestionStartMs) return;
+
+        const { error } = await supabase
+          .from("games")
+          .update({
+            phase: "question",
+            time_left: Number(freshGame.question_duration || COUNTDOWN_DURATION),
+            show_leaderboard: false,
+          })
+          .eq("id", game.id);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setTimeout(() => {
+          phaseSwitchInFlightRef.current = false;
+        }, 300);
+      }
+    })();
+  }, [role, game?.id, game?.phase, game?.question_started_at_ms, syncedNowMs]);
+
+  useEffect(() => {
+    if (role !== "host") return;
+    if (!game?.id) return;
+    if (effectivePhase !== "question") return;
+    if (getRemainingMs(game, syncedNowRef.current) > 0) return;
+    if (phaseSwitchInFlightRef.current) return;
+
+    phaseSwitchInFlightRef.current = true;
+
+    (async () => {
+      try {
+        const { data: freshGame, error: freshGameError } = await supabase
+          .from("games")
+          .select("*")
+          .eq("id", game.id)
+          .single();
+
+        if (freshGameError) throw freshGameError;
+        if (!freshGame || freshGame.phase !== "question") return;
+
+        const questionStartedAtMs = toMs(freshGame.question_started_at_ms);
+        const durationMs = Number(freshGame.question_duration || 0) * 1000;
+        const isExpired =
+          Number.isFinite(questionStartedAtMs) &&
+          durationMs > 0 &&
+          syncedNowRef.current >= questionStartedAtMs + durationMs;
+
+        if (!isExpired) return;
+
+        const { error } = await supabase
+          .from("games")
+          .update({
+            phase: "stats",
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            time_left: 0,
+            show_leaderboard: false,
+          })
+          .eq("id", game.id);
+
+        if (error) throw error;
+        await addLiveEvent(game.id, "answer_stats", "📊 Percentuali risposte mostrate");
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setTimeout(() => {
+          phaseSwitchInFlightRef.current = false;
+        }, 300);
+      }
+    })();
+  }, [role, game, game?.id, effectivePhase, syncedNowMs]);
+
+  useEffect(() => {
+    if (role !== "tv") return;
+    if (!tvAudioReady) return;
+
+    const hasQuestionAudio = Boolean(currentQuestion?.audio_url);
+
+    if (
+      effectivePhase === "question" &&
+      game?.question_started_at_ms &&
+      game?.question_duration &&
+      !hasQuestionAudio
+    ) {
+      startSyncedCountdown(game.question_started_at_ms, game.question_duration);
+    } else {
+      stopCountdownAudio();
+    }
+
+    return () => {
+      stopCountdownAudio();
+    };
+  }, [
+    role,
+    tvAudioReady,
+    effectivePhase,
+    game?.question_started_at_ms,
+    game?.question_duration,
+    currentQuestion?.audio_url,
+    startSyncedCountdown,
+    stopCountdownAudio,
+  ]);
 
   useEffect(() => {
     if (role !== "tv") return;
 
-    const updateTvScale = () => {
-      const widthScale = window.innerWidth / TV_BASE_WIDTH;
-      const heightScale = window.innerHeight / TV_BASE_HEIGHT;
-      const nextScale = Math.min(widthScale, heightScale);
-      setTvScale(nextScale > 0 ? nextScale : 1);
+    const audioEl = tvQuestionAudioRef.current;
+    if (!audioEl) return;
+
+    const stopQuestionAudio = () => {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.removeAttribute("src");
+      audioEl.load();
     };
 
-    updateTvScale();
-    window.addEventListener("resize", updateTvScale);
+    if (!tvAudioReady) {
+      stopQuestionAudio();
+      lastTvQuestionAudioKeyRef.current = null;
+      return;
+    }
+
+    if (effectivePhase !== "question") {
+      stopQuestionAudio();
+      lastTvQuestionAudioKeyRef.current = null;
+      return;
+    }
+
+    if (!currentQuestion?.audio_url || !currentQuestion?.id) {
+      stopQuestionAudio();
+      lastTvQuestionAudioKeyRef.current = null;
+      return;
+    }
+
+    const key = `${currentQuestion.id}-${currentQuestion.audio_url}`;
+
+    if (lastTvQuestionAudioKeyRef.current === key) return;
+    lastTvQuestionAudioKeyRef.current = key;
+
+    stopCountdownAudio();
+
+    audioEl.pause();
+    audioEl.currentTime = 0;
+    audioEl.src = currentQuestion.audio_url;
+    audioEl.load();
+
+    let cancelled = false;
+
+    const playNow = async () => {
+      try {
+        await audioEl.play();
+      } catch (err) {
+        console.log("Audio domanda bloccato:", err);
+      }
+    };
+
+    playNow();
+
+    const stopTimer = setTimeout(() => {
+      if (cancelled) return;
+      audioEl.pause();
+      audioEl.currentTime = 0;
+    }, COUNTDOWN_DURATION * 1000);
 
     return () => {
-      window.removeEventListener("resize", updateTvScale);
+      cancelled = true;
+      clearTimeout(stopTimer);
+      audioEl.pause();
+      audioEl.currentTime = 0;
     };
-  }, [role]);
+  }, [
+    role,
+    tvAudioReady,
+    effectivePhase,
+    currentQuestion?.id,
+    currentQuestion?.audio_url,
+    stopCountdownAudio,
+  ]);
+
+  useEffect(() => {
+    const audioEl = tvQuestionAudioRef.current;
+    if (!audioEl) return;
+
+    if (role !== "tv") return;
+
+    if (effectivePhase !== "question") {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      audioEl.removeAttribute("src");
+      audioEl.load();
+      lastTvQuestionAudioKeyRef.current = null;
+    }
+  }, [role, effectivePhase, game?.phase, game?.current_question_index]);
+
+  useEffect(() => {
+    if (role !== "tv") return;
+
+    if (effectivePhase !== "countdown" && effectivePhase !== "question") {
+      setTvJollyEffect(null);
+      if (tvJollyTimeoutRef.current) {
+        clearTimeout(tvJollyTimeoutRef.current);
+        tvJollyTimeoutRef.current = null;
+      }
+    }
+  }, [role, effectivePhase, game?.current_question_index]);
+
+  useEffect(() => {
+    if (role !== "tv") return;
+    if (!game || !currentQuestion) return;
+
+    if (game.phase === "reveal") {
+      setTvRevealEffect({
+        correctAnswer: currentQuestion.correct_answer,
+        explanation: currentQuestion.explanation,
+      });
+
+      if (lastRevealQuestionIdRef.current !== currentQuestion.id) {
+        playRevealAudio();
+        lastRevealQuestionIdRef.current = currentQuestion.id;
+      }
+    } else {
+      setTvRevealEffect(null);
+    }
+  }, [role, game?.phase, currentQuestion?.id, currentQuestion, playRevealAudio]);
+
+  useEffect(() => {
+    if (role !== "tv") return;
+    if (!liveEvents.length) return;
+
+    const latest = liveEvents[0];
+    if (!latest || latest.event_type !== "jolly_used") return;
+    if (lastTvJollyEventIdRef.current === latest.id) return;
+    if (effectivePhase !== "question") return;
+
+    lastTvJollyEventIdRef.current = latest.id;
+
+    setTvJollyEffect({
+      text: latest.event_text,
+      id: latest.id,
+    });
+
+    if (tvJollyTimeoutRef.current) {
+      clearTimeout(tvJollyTimeoutRef.current);
+    }
+
+    tvJollyTimeoutRef.current = setTimeout(() => {
+      setTvJollyEffect((current) => {
+        if (!current || current.id !== latest.id) return current;
+        return null;
+      });
+      tvJollyTimeoutRef.current = null;
+    }, 3000);
+  }, [role, liveEvents, effectivePhase]);
+
+  useEffect(() => {
+    return () => {
+      stopCountdownAudio();
+      if (tvJollyTimeoutRef.current) clearTimeout(tvJollyTimeoutRef.current);
+      if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+    };
+  }, [stopCountdownAudio]);
+
+  useEffect(() => {
+    if (game?.phase !== "final") {
+      setFinalRevealIndex(-1);
+      return;
+    }
+
+    setFinalRevealIndex(-1);
+
+    const t1 = setTimeout(() => setFinalRevealIndex(2), 800);
+    const t2 = setTimeout(() => setFinalRevealIndex(1), 2200);
+    const t3 = setTimeout(() => setFinalRevealIndex(0), 3800);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [game?.phase]);
+/* =====================================================
+   PARTE 8 - STILI LOCALI E FUNZIONI RENDER
+===================================================== */
+
+  const containerStyle = {
+    minHeight: "100vh",
+    padding: 24,
+    color: "white",
+    fontFamily: "Arial, sans-serif",
+    background: APP_BG,
+  };
+
+  const panelStyle = {
+    background: CARD_BG,
+    border: BORDER,
+    borderRadius: 18,
+    padding: 20,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+    backdropFilter: "blur(6px)",
+    position: "relative",
+    zIndex: 1,
+  };
+
+  const buttonStyle = {
+    padding: "14px 18px",
+    margin: "8px",
+    borderRadius: 14,
+    border: "none",
+    background: `linear-gradient(135deg, ${PRIMARY} 0%, ${PRIMARY_DARK} 100%)`,
+    color: "white",
+    fontWeight: "bold",
+    cursor: "pointer",
+    fontSize: 16,
+    position: "relative",
+    zIndex: 1,
+    boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+  };
+
+  const feedbackOverlayStyle = {
+    position: "fixed",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      answerFeedback?.type === "correct"
+        ? "rgba(36,193,107,0.22)"
+        : "rgba(255,87,34,0.22)",
+    zIndex: 9998,
+    pointerEvents: "none",
+  };
+
+  const questionImageBoxStyle = {
+    width: "100%",
+    borderRadius: 18,
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.06)",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+  };
+
+  const questionImageStyle = {
+    display: "block",
+    width: "100%",
+    maxHeight: 100,
+    objectFit: "contain",
+    background: "rgba(0,0,0,0.18)",
+  };
+
+  const questionAudioBoxStyle = {
+    ...panelStyle,
+    padding: 14,
+    textAlign: "center",
+  };
+
+  const renderStatsBar = (letter, label) => {
+    const stat = answerStats[letter];
+    return (
+      <div
+        key={letter}
+        style={{
+          ...getTvOptionStyle(letter),
+          flexDirection: "column",
+          alignItems: "stretch",
+          gap: 10,
+          minHeight: 110,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 30 }}>
+          <span>
+            {letter} - {label}
+          </span>
+          <span style={{ fontWeight: "bold" }}>{stat.percent}%</span>
+        </div>
+
+        <div
+          style={{
+            height: 18,
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.18)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${stat.percent}%`,
+              background: "rgba(255,255,255,0.92)",
+              borderRadius: 999,
+              transition: "width 0.35s ease",
+            }}
+          />
+        </div>
+
+        <div style={{ fontSize: 20, opacity: 0.95 }}>
+          {stat.count} {stat.count === 1 ? "voto" : "voti"}
+        </div>
+      </div>
+    );
+  };
+
+  const renderQuestionMedia = (question, mode = "player") => {
+    if (!question) return null;
+
+    const hasImage = Boolean(question.image_url);
+    const hasAudio = Boolean(question.audio_url);
+
+    if (!hasImage && !hasAudio) return null;
+
+    const imageMaxHeight = mode === "tv" ? 260 : mode === "host" ? 160 : 130;
+
+    return (
+      <div
+        style={{
+          display: "grid",
+          gap: 14,
+          width: "100%",
+          maxWidth: mode === "tv" ? 1000 : 700,
+          margin: "0 auto 18px",
+        }}
+      >
+        {hasImage && (
+          <div style={questionImageBoxStyle}>
+            <img
+              src={question.image_url}
+              alt="Immagine domanda"
+              style={{ ...questionImageStyle, maxHeight: imageMaxHeight }}
+            />
+          </div>
+        )}
+
+        {hasAudio && mode === "tv" && (
+          <div style={questionAudioBoxStyle}>
+            <div style={{ fontWeight: "bold", marginBottom: 10 }}>
+              🔊 Audio domanda in riproduzione
+            </div>
+            <div style={{ opacity: 0.88 }}>
+              L'audio parte automaticamente sulla schermata TV.
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+/* =====================================================
+   PARTE 9 - RENDER SCHERMATA SCELTA RUOLO E PLAYER
+===================================================== */
+
+  if (!role) {
+    return (
+      <div
+        style={{
+          ...containerStyle,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <style>{`
+          @keyframes popIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+          }
+          @keyframes podiumRise {
+            from { transform: translateY(40px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+          @keyframes winnerGlow {
+            0% { transform: scale(1); text-shadow: 0 0 0 rgba(255,255,255,0); }
+            50% { transform: scale(1.08); text-shadow: 0 0 20px rgba(255,215,64,0.85); }
+            100% { transform: scale(1); text-shadow: 0 0 8px rgba(255,215,64,0.45); }
+          }
+          @keyframes pulseTime {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+            100% { transform: scale(1); }
+          }
+          @keyframes answerFlashPop {
+            0% { transform: scale(0.85); opacity: 0; }
+            20% { transform: scale(1.06); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes correctRevealGlow {
+            0% { transform: scale(0.96); opacity: 0; }
+            50% { transform: scale(1.03); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes selectedPulse {
+            0% { box-shadow: 0 0 0 rgba(255,255,255,0); }
+            50% { box-shadow: 0 0 24px rgba(255,255,255,0.28); }
+            100% { box-shadow: 0 0 0 rgba(255,255,255,0); }
+          }
+        `}</style>
+
+        <div
+          style={{
+            ...panelStyle,
+            width: "100%",
+            maxWidth: 600,
+            textAlign: "center",
+            animation: "popIn 0.6s ease",
+          }}
+        >
+          <h1 style={{ fontSize: 44, marginBottom: 10 }}>🍻 {getGameTitle(game)}</h1>
+          <p style={{ opacity: 0.85, marginBottom: 24 }}>Scegli come vuoi entrare</p>
+          <button onClick={() => setRole("host")} style={buttonStyle}>
+            HOST
+          </button>
+          <button onClick={() => setRole("player")} style={buttonStyle}>
+            GIOCATORE
+          </button>
+          <button onClick={() => setRole("tv")} style={buttonStyle}>
+            TV
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (role === "player") {
+    if (!joinedPlayer) {
+      return (
+        <div
+          style={{
+            ...containerStyle,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div style={playerBackgroundLogoStyle}>
+            <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+          </div>
+
+          <div style={{ ...panelStyle, width: "100%", maxWidth: 560, textAlign: "center" }}>
+            <h1>Entra nel quiz</h1>
+            <p>
+              <b>Codice partita:</b> {GAME_CODE}
+            </p>
+            <p>
+              <b>Stato:</b> {status}
+            </p>
+
+            <div style={{ marginTop: 18 }}>
+              <input
+                placeholder="Nome squadra"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                style={{
+                  padding: 14,
+                  width: "100%",
+                  maxWidth: 340,
+                  borderRadius: 12,
+                  border: "none",
+                  marginBottom: 14,
+                  fontSize: 16,
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              />
+            </div>
+
+            {isLoading ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 16,
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  fontWeight: "bold",
+                  maxWidth: 420,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                Caricamento partita...
+              </div>
+            ) : game?.phase !== "lobby" ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 16,
+                  borderRadius: 12,
+                  background: "rgba(255,87,34,0.18)",
+                  border: "1px solid rgba(255,87,34,0.45)",
+                  fontWeight: "bold",
+                  maxWidth: 420,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                Partita in corso, attendi una nuova partita
+              </div>
+            ) : (
+              <button onClick={joinGame} style={buttonStyle}>
+                Entra
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ ...containerStyle, position: "relative", overflow: "hidden" }}>
+        <div style={playerBackgroundLogoStyle}>
+          <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+        </div>
+
+        {answerFeedback && (
+          <div style={feedbackOverlayStyle}>
+            <div
+              style={{
+                ...panelStyle,
+                minWidth: 280,
+                textAlign: "center",
+                border:
+                  answerFeedback.type === "correct"
+                    ? "2px solid rgba(36,193,107,0.85)"
+                    : "2px solid rgba(255,87,34,0.85)",
+                background:
+                  answerFeedback.type === "correct"
+                    ? "rgba(36,193,107,0.18)"
+                    : "rgba(255,87,34,0.18)",
+                animation: "answerFlashPop 0.22s ease",
+              }}
+            >
+              <div style={{ fontSize: 52, marginBottom: 8 }}>
+                {answerFeedback.type === "correct" ? "✅" : "❌"}
+              </div>
+              <div style={{ fontSize: 34, fontWeight: "bold" }}>
+                {answerFeedback.type === "correct" ? "RISPOSTA ESATTA" : "RISPOSTA SBAGLIATA"}
+              </div>
+              {typeof answerFeedback.points === "number" && answerFeedback.points > 0 && (
+                <div style={{ fontSize: 24, marginTop: 10, color: GOLD }}>
+                  +{answerFeedback.points} punti
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ maxWidth: 760, margin: "0 auto", position: "relative", zIndex: 1 }}>
+          <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
+            <h1 style={{ marginBottom: 8 }}>🎮 {joinedPlayer.name}</h1>
+            <p>
+              <b>Punti:</b> {joinedPlayer.score || 0}
+            </p>
+            <p>
+              <b>Stato:</b> {status}
+            </p>
+
+            {!jollyUsed && effectivePhase === "question" && localTimeLeft > 0 && (
+              <button
+                onClick={useJollyCard}
+                style={{
+                  ...buttonStyle,
+                  background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                }}
+              >
+                USA JOLLY
+              </button>
+            )}
+
+            {jollyUsed && <p style={{ color: GOLD, fontWeight: "bold" }}>JOLLY già usato</p>}
+          </div>
+
+          {game?.phase === "lobby" && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <h2>Attendi l'inizio del quiz...</h2>
+            </div>
+          )}
+
+          {effectivePhase === "countdown" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <div style={{ fontSize: 24, opacity: 0.85, marginBottom: 12 }}>
+                Prossima domanda tra...
+              </div>
+              <div style={{ fontSize: 64, fontWeight: "bold", color: GOLD }}>
+                {countdownTimeLeft}
+              </div>
+            </div>
+          )}
+
+          {effectivePhase === "question" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 42,
+                  fontWeight: "bold",
+                  marginBottom: 16,
+                  color: localTimeLeft <= 5 ? GOLD : "white",
+                  animation:
+                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
+                }}
+              >
+                ⏳ {localTimeLeft}s
+              </div>
+
+              {renderQuestionMedia(currentQuestion, "player")}
+
+              <h2 style={{ fontSize: 30, lineHeight: 1.25 }}>{currentQuestion.question}</h2>
+
+              <div style={{ display: "grid", gap: 12, maxWidth: 520, margin: "24px auto 0" }}>
+                <button
+                  onClick={() => submitAnswer("A")}
+                  disabled={!!selectedAnswer || localTimeLeft <= 0}
+                  style={getPlayerAnswerButtonStyle(
+                    "A",
+                    !!selectedAnswer || localTimeLeft <= 0,
+                    selectedAnswer === "A"
+                  )}
+                >
+                  A - {currentQuestion.option_a}
+                </button>
+
+                <button
+                  onClick={() => submitAnswer("B")}
+                  disabled={!!selectedAnswer || localTimeLeft <= 0}
+                  style={getPlayerAnswerButtonStyle(
+                    "B",
+                    !!selectedAnswer || localTimeLeft <= 0,
+                    selectedAnswer === "B"
+                  )}
+                >
+                  B - {currentQuestion.option_b}
+                </button>
+
+                {currentQuestion.option_c && (
+                  <button
+                    onClick={() => submitAnswer("C")}
+                    disabled={!!selectedAnswer || localTimeLeft <= 0}
+                    style={getPlayerAnswerButtonStyle(
+                      "C",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "C"
+                    )}
+                  >
+                    C - {currentQuestion.option_c}
+                  </button>
+                )}
+
+                {currentQuestion.option_d && (
+                  <button
+                    onClick={() => submitAnswer("D")}
+                    disabled={!!selectedAnswer || localTimeLeft <= 0}
+                    style={getPlayerAnswerButtonStyle(
+                      "D",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "D"
+                    )}
+                  >
+                    D - {currentQuestion.option_d}
+                  </button>
+                )}
+              </div>
+
+              {selectedAnswer && (
+                <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
+                  Hai risposto: {selectedAnswer}
+                </p>
+              )}
+
+              {!selectedAnswer && localTimeLeft <= 0 && (
+                <p style={{ marginTop: 18, color: RED, fontWeight: "bold" }}>
+                  Tempo scaduto
+                </p>
+              )}
+            </div>
+          )}
+
+          {game?.phase === "stats" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <h2 style={{ marginBottom: 10 }}>📊 Risposte raccolte</h2>
+              <p style={{ fontSize: 18, opacity: 0.92 }}>
+                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
+              </p>
+              <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
+                Attendi che l'host mostri la risposta corretta
+              </p>
+            </div>
+          )}
+
+          {game?.phase === "reveal" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <h2 style={{ color: GREEN }}>✅ Risposta corretta: {currentQuestion.correct_answer}</h2>
+              <p style={{ fontSize: 18 }}>{currentQuestion.explanation}</p>
+            </div>
+          )}
+
+          {game?.phase === "final" && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <h2>🏁 Quiz terminato</h2>
+              <p>Guarda il podio finale.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+/* =====================================================
+   PARTE 10 - RENDER SCHERMATA TV
+===================================================== */
 
   if (role === "tv") {
     return (
       <div
         style={{
-          width: "100vw",
+          minHeight: "100vh",
           height: "100vh",
-          background: APP_BG,
-          overflow: "hidden",
-          position: "relative",
+          width: "100vw",
+          padding: 0,
           color: "white",
           fontFamily: "Arial, sans-serif",
+          background: APP_BG,
+          position: "relative",
+          overflow: "hidden",
         }}
         onClick={() => {
           if (!tvAudioReady) {
@@ -779,6 +2471,8 @@ export default function App() {
           playsInline
           style={{ display: "none" }}
         />
+
+        <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
 
         {!hideTvAudioOverlay && (
           <div
@@ -922,901 +2616,622 @@ export default function App() {
 
         <div
           style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: TV_BASE_WIDTH,
-            height: TV_BASE_HEIGHT,
-            transform: `translate(-50%, -50%) scale(${tvScale})`,
-            transformOrigin: "center center",
+            width: "100%",
+            height: "100%",
+            boxSizing: "border-box",
+            paddingTop: 132,
+            paddingBottom: 20,
+            paddingLeft: 22,
+            paddingRight: 22,
             overflow: "hidden",
           }}
         >
-          <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
+          {game?.phase === "lobby" && (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ textAlign: "center", marginBottom: 14, flexShrink: 0 }}>
+                <h1
+                  style={{
+                    fontSize: "clamp(36px, 4vw, 64px)",
+                    margin: "0 0 8px 0",
+                    lineHeight: 1.05,
+                  }}
+                >
+                  🍻 {getGameTitle(game)}
+                </h1>
+                <div style={{ fontSize: "clamp(18px, 1.9vw, 28px)", opacity: 0.92 }}>
+                  Inquadra il QR e unisciti alla partita
+                </div>
+              </div>
 
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              boxSizing: "border-box",
-              paddingTop: 140,
-              paddingBottom: 24,
-              paddingLeft: 24,
-              paddingRight: 24,
-              overflow: "hidden",
-            }}
-          >
-            {game?.phase === "lobby" && (
               <div
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
+                  flex: 1,
+                  minHeight: 0,
+                  display: "grid",
+                  gridTemplateColumns: "0.92fr 1.08fr",
+                  gap: 18,
                   overflow: "hidden",
                 }}
               >
-                <div style={{ textAlign: "center", marginBottom: 14, flexShrink: 0 }}>
-                  <h1
-                    style={{
-                      fontSize: 56,
-                      margin: "0 0 8px 0",
-                      lineHeight: 1.05,
-                    }}
-                  >
-                    🍻 {getGameTitle(game)}
-                  </h1>
-                  <div style={{ fontSize: 26, opacity: 0.92 }}>
-                    Inquadra il QR e unisciti alla partita
-                  </div>
-                </div>
-
                 <div
                   style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: "0.92fr 1.08fr",
-                    gap: 18,
+                    ...panelStyle,
+                    padding: 14,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
                     overflow: "hidden",
+                    minHeight: 0,
                   }}
                 >
                   <div
                     style={{
-                      ...panelStyle,
-                      padding: 14,
+                      background: "white",
+                      padding: 12,
+                      borderRadius: 18,
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
-                      gap: 10,
-                      overflow: "hidden",
-                      minHeight: 0,
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
+                      width: "fit-content",
+                      maxWidth: "100%",
+                      flexShrink: 1,
                     }}
                   >
-                    <div
+                    <QRCodeSVG
+                      value={PLAYER_JOIN_URL}
+                      size={tvQrSize}
                       style={{
-                        background: "white",
-                        padding: 12,
-                        borderRadius: 18,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
-                        width: "fit-content",
+                        display: "block",
+                        width: `${tvQrSize}px`,
+                        height: `${tvQrSize}px`,
                         maxWidth: "100%",
-                        flexShrink: 1,
+                        maxHeight: "100%",
                       }}
-                    >
-                      <QRCodeSVG
-                        value={PLAYER_JOIN_URL}
-                        size={tvQrSize}
-                        style={{
-                          display: "block",
-                          width: `${tvQrSize}px`,
-                          height: `${tvQrSize}px`,
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                        }}
-                      />
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 26,
-                        fontWeight: "bold",
-                        textAlign: "center",
-                        lineHeight: 1.1,
-                      }}
-                    >
-                      📱 Inquadra per partecipare
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 20,
-                        color: GOLD,
-                        fontWeight: "bold",
-                        textAlign: "center",
-                        lineHeight: 1.1,
-                      }}
-                    >
-                      Codice: {GAME_CODE}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 13,
-                        opacity: 0.72,
-                        textAlign: "center",
-                        maxWidth: "100%",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {PLAYER_JOIN_URL}
-                    </div>
+                    />
                   </div>
 
                   <div
                     style={{
-                      ...panelStyle,
-                      padding: 18,
-                      display: "flex",
-                      flexDirection: "column",
-                      minHeight: 0,
-                      overflow: "hidden",
+                      marginTop: 8,
+                      fontSize: "clamp(18px, 1.6vw, 28px)",
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      lineHeight: 1.1,
                     }}
                   >
-                    <div
-                      style={{
-                        textAlign: "center",
-                        fontWeight: "bold",
-                        fontSize: 32,
-                        marginBottom: 14,
-                        flexShrink: 0,
-                      }}
-                    >
-                      Giocatori entrati ({players.length})
-                    </div>
-
-                    {players.length === 0 ? (
-                      <div
-                        style={{
-                          flex: 1,
-                          minHeight: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          textAlign: "center",
-                          borderRadius: 16,
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          fontSize: 32,
-                        }}
-                      >
-                        Nessun giocatore ancora collegato
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          flex: 1,
-                          minHeight: 0,
-                          display: "grid",
-                          gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, minmax(0, 1fr))`,
-                          gap: 10,
-                          alignContent: "start",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {players.map((player, index) => (
-                          <div
-                            key={player.id}
-                            style={{
-                              background:
-                                index < 3
-                                  ? "rgba(255,215,64,0.12)"
-                                  : "rgba(255,255,255,0.06)",
-                              border:
-                                index < 3
-                                  ? "1px solid rgba(255,215,64,0.32)"
-                                  : "1px solid rgba(255,255,255,0.12)",
-                              borderRadius: 14,
-                              padding: tvLobbyPlayerPadding,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 10,
-                              minWidth: 0,
-                              overflow: "hidden",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: tvLobbyPlayerFontSize,
-                                fontWeight: "bold",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                minWidth: 0,
-                                flex: 1,
-                              }}
-                              title={player.name}
-                            >
-                              {index + 1}. {player.name}
-                            </div>
-
-                            <div
-                              style={{
-                                fontSize: Math.max(12, tvLobbyPlayerFontSize - 8),
-                                color: GOLD,
-                                fontWeight: "bold",
-                                flexShrink: 0,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              entrato
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    📱 Inquadra per partecipare
                   </div>
-                </div>
-              </div>
-            )}
 
-            {Boolean(game?.show_leaderboard) && game?.phase !== "final" && (
-              <div style={{ ...panelStyle, padding: 40, height: "100%", overflow: "hidden" }}>
-                <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
-                  🏆 CLASSIFICA PROVVISORIA
-                </h2>
-
-                {players.length === 0 ? (
-                  <div style={{ fontSize: 28, opacity: 0.85, textAlign: "center" }}>
-                    Nessun giocatore
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: "clamp(15px, 1.2vw, 22px)",
+                      color: GOLD,
+                      fontWeight: "bold",
+                      textAlign: "center",
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    Codice: {GAME_CODE}
                   </div>
-                ) : (
-                  <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 18 }}>
-                    {players.map((p, idx) => (
-                      <div
-                        key={p.id}
-                        style={{
-                          ...panelStyle,
-                          fontSize: 34,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          background:
-                            idx === 0
-                              ? "rgba(255,215,64,0.18)"
-                              : idx === 1
-                                ? "rgba(192,192,192,0.18)"
-                                : idx === 2
-                                  ? "rgba(205,127,50,0.18)"
-                                  : "rgba(255,255,255,0.06)",
-                          border:
-                            idx === 0
-                              ? "2px solid rgba(255,215,64,0.7)"
-                              : "1px solid rgba(255,255,255,0.14)",
-                        }}
-                      >
-                        <span>
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "•"} {idx + 1}.{" "}
-                          {p.name}
-                        </span>
-                        <span style={{ color: GOLD, fontWeight: "bold" }}>{p.score || 0} pt</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
-            {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
-              <div
-                style={{
-                  ...panelStyle,
-                  height: "100%",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                  padding: 16,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    flexShrink: 0,
-                    textAlign: "center",
-                    fontSize: currentQuestion.image_url ? 46 : 56,
-                    fontWeight: "bold",
-                    color: localTimeLeft <= 5 ? GOLD : "white",
-                    lineHeight: 1,
-                    animation:
-                      localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
-                  }}
-                >
-                  ⏳ {localTimeLeft}
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: "clamp(11px, 0.9vw, 15px)",
+                      opacity: 0.72,
+                      textAlign: "center",
+                      maxWidth: "100%",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {PLAYER_JOIN_URL}
+                  </div>
                 </div>
 
                 <div
                   style={{
                     ...panelStyle,
-                    flexShrink: 0,
-                    padding: currentQuestion.image_url ? "10px 14px" : "12px 18px",
+                    padding: 18,
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
+                    flexDirection: "column",
+                    minHeight: 0,
                     overflow: "hidden",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: currentQuestion.image_url
-                        ? 26
-                        : currentQuestion.audio_url
-                          ? 30
-                          : 36,
+                      textAlign: "center",
                       fontWeight: "bold",
-                      lineHeight: 1.12,
-                      wordBreak: "break-word",
-                      overflowWrap: "anywhere",
+                      fontSize: "clamp(24px, 2vw, 34px)",
+                      marginBottom: 14,
+                      flexShrink: 0,
                     }}
                   >
-                    {currentQuestion.question}
+                    Giocatori entrati ({players.length})
                   </div>
-                </div>
 
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: currentQuestion.image_url ? "0.95fr 1.05fr" : "1fr",
-                    gap: 12,
-                    overflow: "hidden",
-                  }}
-                >
-                  {currentQuestion.image_url ? (
+                  {players.length === 0 ? (
                     <div
                       style={{
-                        ...panelStyle,
-                        padding: 8,
+                        flex: 1,
                         minHeight: 0,
-                        overflow: "hidden",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        textAlign: "center",
+                        borderRadius: 16,
+                        background: "rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        fontSize: "clamp(24px, 2vw, 34px)",
                       }}
                     >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          borderRadius: 14,
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
+                      Nessun giocatore ancora collegato
                     </div>
-                  ) : null}
-
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {currentQuestion.audio_url && !currentQuestion.image_url && (
-                      <div
-                        style={{
-                          ...questionAudioBoxStyle,
-                          margin: 0,
-                          padding: "10px 14px",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: "bold",
-                            fontSize: 22,
-                            lineHeight: 1.1,
-                            marginBottom: 4,
-                          }}
-                        >
-                          🔊 Audio domanda in riproduzione
-                        </div>
-                        <div
-                          style={{
-                            opacity: 0.88,
-                            fontSize: 15,
-                            lineHeight: 1.1,
-                          }}
-                        >
-                          L'audio parte automaticamente sulla schermata TV.
-                        </div>
-                      </div>
-                    )}
-
+                  ) : (
                     <div
                       style={{
                         flex: 1,
                         minHeight: 0,
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gridAutoRows: "1fr",
+                        gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, minmax(0, 1fr))`,
                         gap: 10,
+                        alignContent: "start",
                         overflow: "hidden",
                       }}
                     >
-                      <div
-                        style={{
-                          ...getTvOptionStyle("A"),
-                          fontSize: currentQuestion.image_url ? 21 : 28,
-                          padding: currentQuestion.image_url ? "10px 12px" : "14px 16px",
-                        }}
-                      >
-                        A - {currentQuestion.option_a}
-                      </div>
-
-                      <div
-                        style={{
-                          ...getTvOptionStyle("B"),
-                          fontSize: currentQuestion.image_url ? 21 : 28,
-                          padding: currentQuestion.image_url ? "10px 12px" : "14px 16px",
-                        }}
-                      >
-                        B - {currentQuestion.option_b}
-                      </div>
-
-                      {currentQuestion.option_c ? (
+                      {players.map((player, index) => (
                         <div
+                          key={player.id}
                           style={{
-                            ...getTvOptionStyle("C"),
-                            fontSize: currentQuestion.image_url ? 21 : 28,
-                            padding: currentQuestion.image_url ? "10px 12px" : "14px 16px",
+                            background:
+                              index < 3
+                                ? "rgba(255,215,64,0.12)"
+                                : "rgba(255,255,255,0.06)",
+                            border:
+                              index < 3
+                                ? "1px solid rgba(255,215,64,0.32)"
+                                : "1px solid rgba(255,255,255,0.12)",
+                            borderRadius: 14,
+                            padding: tvLobbyPlayerPadding,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            minWidth: 0,
+                            overflow: "hidden",
                           }}
                         >
-                          C - {currentQuestion.option_c}
+                          <div
+                            style={{
+                              fontSize: tvLobbyPlayerFontSize,
+                              fontWeight: "bold",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              minWidth: 0,
+                              flex: 1,
+                            }}
+                            title={player.name}
+                          >
+                            {index + 1}. {player.name}
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: Math.max(12, tvLobbyPlayerFontSize - 8),
+                              color: GOLD,
+                              fontWeight: "bold",
+                              flexShrink: 0,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            entrato
+                          </div>
                         </div>
-                      ) : (
-                        <div style={{ visibility: "hidden" }} />
-                      )}
-
-                      {currentQuestion.option_d ? (
-                        <div
-                          style={{
-                            ...getTvOptionStyle("D"),
-                            fontSize: currentQuestion.image_url ? 21 : 28,
-                            padding: currentQuestion.image_url ? "10px 12px" : "14px 16px",
-                          }}
-                        >
-                          D - {currentQuestion.option_d}
-                        </div>
-                      ) : (
-                        <div style={{ visibility: "hidden" }} />
-                      )}
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {!Boolean(game?.show_leaderboard) && effectivePhase === "countdown" && currentQuestion && (
-              <div
-                style={{
-                  ...panelStyle,
-                  height: "100%",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  gap: 18,
-                  padding: 24,
-                  overflow: "hidden",
-                  textAlign: "center",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 72,
-                    fontWeight: "bold",
-                    color: GOLD,
-                    lineHeight: 1,
-                  }}
-                >
-                  {countdownTimeLeft}
+          {Boolean(game?.show_leaderboard) && game?.phase !== "final" && (
+            <div style={{ ...panelStyle, padding: 40, height: "100%", overflow: "hidden" }}>
+              <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
+                🏆 CLASSIFICA PROVVISORIA
+              </h2>
+
+              {players.length === 0 ? (
+                <div style={{ fontSize: 28, opacity: 0.85, textAlign: "center" }}>
+                  Nessun giocatore
                 </div>
-
-                <div
-                  style={{
-                    fontSize: 38,
-                    opacity: 0.95,
-                    lineHeight: 1.15,
-                  }}
-                >
-                  Prossima domanda tra...
-                </div>
-
-                <div
-                  style={{
-                    ...panelStyle,
-                    padding: "14px 18px",
-                    maxWidth: 1100,
-                    margin: "0 auto",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: currentQuestion.image_url ? 30 : 38,
-                      fontWeight: "bold",
-                      lineHeight: 1.15,
-                      wordBreak: "break-word",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {currentQuestion.question}
-                  </div>
-                </div>
-
-                {currentQuestion.image_url && (
-                  <div
-                    style={{
-                      ...panelStyle,
-                      padding: 10,
-                      flex: 1,
-                      minHeight: 0,
-                      maxWidth: 1100,
-                      width: "100%",
-                      margin: "0 auto",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <img
-                      src={currentQuestion.image_url}
-                      alt="Immagine domanda"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "100%",
-                        objectFit: "contain",
-                        borderRadius: 14,
-                        background: "rgba(0,0,0,0.18)",
-                      }}
-                    />
-                  </div>
-                )}
-
-                {currentQuestion.audio_url && !currentQuestion.image_url && (
-                  <div
-                    style={{
-                      ...questionAudioBoxStyle,
-                      maxWidth: 900,
-                      width: "100%",
-                      margin: "0 auto",
-                    }}
-                  >
-                    <div style={{ fontWeight: "bold", marginBottom: 10, fontSize: 30 }}>
-                      🔊 Audio domanda in partenza
-                    </div>
-                    <div style={{ opacity: 0.88, fontSize: 22 }}>
-                      L'audio verrà riprodotto automaticamente allo start della domanda.
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!Boolean(game?.show_leaderboard) && game?.phase === "stats" && currentQuestion && (
-              <div
-                style={{
-                  ...panelStyle,
-                  height: "100%",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                  padding: 24,
-                  overflow: "hidden",
-                }}
-              >
-                <div style={{ textAlign: "center", flexShrink: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 48,
-                      fontWeight: "bold",
-                      marginBottom: 8,
-                    }}
-                  >
-                    📊 RISPOSTE RACCOLTE
-                  </div>
-                  <div style={{ fontSize: 26, opacity: 0.92 }}>
-                    {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    ...panelStyle,
-                    flexShrink: 0,
-                    padding: "12px 16px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: currentQuestion.image_url ? 26 : 34,
-                      fontWeight: "bold",
-                      lineHeight: 1.15,
-                      wordBreak: "break-word",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {currentQuestion.question}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: currentQuestion.image_url ? "0.9fr 1.1fr" : "1fr",
-                    gap: 16,
-                    overflow: "hidden",
-                  }}
-                >
-                  {currentQuestion.image_url ? (
+              ) : (
+                <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 18 }}>
+                  {players.map((p, idx) => (
                     <div
-                      style={{
-                        ...panelStyle,
-                        padding: 8,
-                        minHeight: 0,
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          borderRadius: 14,
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  ) : null}
-
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "grid",
-                      gap: 12,
-                      alignContent: "stretch",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {renderStatsBar("A", currentQuestion.option_a)}
-                    {renderStatsBar("B", currentQuestion.option_b)}
-                    {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
-                    {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!Boolean(game?.show_leaderboard) && game?.phase === "reveal" && currentQuestion && (
-              <div
-                style={{
-                  ...panelStyle,
-                  height: "100%",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                  padding: 24,
-                  overflow: "hidden",
-                }}
-              >
-                <div style={{ textAlign: "center", flexShrink: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 54,
-                      fontWeight: "bold",
-                      color: GREEN,
-                      marginBottom: 10,
-                    }}
-                  >
-                    ✅ RISPOSTA CORRETTA: {currentQuestion.correct_answer}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    ...panelStyle,
-                    flexShrink: 0,
-                    padding: "12px 16px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: currentQuestion.image_url ? 26 : 34,
-                      fontWeight: "bold",
-                      lineHeight: 1.15,
-                      wordBreak: "break-word",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {currentQuestion.question}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: "grid",
-                    gridTemplateColumns: currentQuestion.image_url ? "0.9fr 1.1fr" : "1fr",
-                    gap: 16,
-                    overflow: "hidden",
-                  }}
-                >
-                  {currentQuestion.image_url ? (
-                    <div
-                      style={{
-                        ...panelStyle,
-                        padding: 8,
-                        minHeight: 0,
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          borderRadius: 14,
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  ) : null}
-
-                  <div
-                    style={{
-                      minHeight: 0,
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gridAutoRows: "1fr",
-                      gap: 12,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div style={getTvRevealOptionStyle("A", currentQuestion.correct_answer)}>
-                      A - {currentQuestion.option_a}
-                    </div>
-                    <div style={getTvRevealOptionStyle("B", currentQuestion.correct_answer)}>
-                      B - {currentQuestion.option_b}
-                    </div>
-                    {currentQuestion.option_c ? (
-                      <div style={getTvRevealOptionStyle("C", currentQuestion.correct_answer)}>
-                        C - {currentQuestion.option_c}
-                      </div>
-                    ) : (
-                      <div style={{ visibility: "hidden" }} />
-                    )}
-                    {currentQuestion.option_d ? (
-                      <div style={getTvRevealOptionStyle("D", currentQuestion.correct_answer)}>
-                        D - {currentQuestion.option_d}
-                      </div>
-                    ) : (
-                      <div style={{ visibility: "hidden" }} />
-                    )}
-                  </div>
-                </div>
-
-                {currentQuestion.explanation && (
-                  <div
-                    style={{
-                      ...panelStyle,
-                      flexShrink: 0,
-                      padding: "12px 16px",
-                      textAlign: "center",
-                      fontSize: 22,
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {currentQuestion.explanation}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {game?.phase === "final" && (
-              <div
-                style={{
-                  ...panelStyle,
-                  padding: 40,
-                  height: "100%",
-                  overflow: "hidden",
-                }}
-              >
-                <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
-                  🏆 PODIO FINALE
-                </h2>
-
-                <div style={{ display: "grid", gap: 18, maxWidth: 800, margin: "0 auto" }}>
-                  {finalRevealIndex >= 2 && podiumPlayers[2] && (
-                    <div
+                      key={p.id}
                       style={{
                         ...panelStyle,
                         fontSize: 34,
-                        background: "rgba(205,127,50,0.22)",
-                        animation: "podiumRise 0.8s ease",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background:
+                          idx === 0
+                            ? "rgba(255,215,64,0.18)"
+                            : idx === 1
+                              ? "rgba(192,192,192,0.18)"
+                              : idx === 2
+                                ? "rgba(205,127,50,0.18)"
+                                : "rgba(255,255,255,0.06)",
+                        border:
+                          idx === 0
+                            ? "2px solid rgba(255,215,64,0.7)"
+                            : "1px solid rgba(255,255,255,0.14)",
                       }}
                     >
-                      🥉 3° POSTO — {podiumPlayers[2].name} — {podiumPlayers[2].score} punti
+                      <span>
+                        {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "•"} {idx + 1}.{" "}
+                        {p.name}
+                      </span>
+                      <span style={{ color: GOLD, fontWeight: "bold" }}>{p.score || 0} pt</span>
                     </div>
-                  )}
-
-                  {finalRevealIndex >= 1 && podiumPlayers[1] && (
-                    <div
-                      style={{
-                        ...panelStyle,
-                        fontSize: 38,
-                        background: "rgba(192,192,192,0.22)",
-                        animation: "podiumRise 0.8s ease",
-                      }}
-                    >
-                      🥈 2° POSTO — {podiumPlayers[1].name} — {podiumPlayers[1].score} punti
-                    </div>
-                  )}
-
-                  {finalRevealIndex >= 0 && podiumPlayers[0] && (
-                    <div
-                      style={{
-                        ...panelStyle,
-                        fontSize: 46,
-                        background: "rgba(255,215,64,0.25)",
-                        animation: "winnerGlow 1.6s infinite",
-                        border: "2px solid rgba(255,215,64,0.8)",
-                      }}
-                    >
-                      🥇 1° POSTO — {podiumPlayers[0].name} — {podiumPlayers[0].score} punti
-                      <div style={{ fontSize: 56, marginTop: 16 }}>🎉 VINCITORE! 🎉</div>
-                    </div>
-                  )}
+                  ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {!Boolean(game?.show_leaderboard) && effectivePhase === "countdown" && currentQuestion && (
+            <div
+              style={{
+                ...panelStyle,
+                padding: 40,
+                textAlign: "center",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                overflow: "hidden",
+              }}
+            >
+              {renderQuestionMedia(currentQuestion, "tv")}
+              <div style={{ fontSize: 38, marginBottom: 16, opacity: 0.9 }}>
+                Prossima domanda tra...
               </div>
-            )}
-          </div>
+              <div style={{ fontSize: 96, fontWeight: "bold", color: GOLD }}>
+                {countdownTimeLeft}
+              </div>
+            </div>
+          )}
+
+          {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
+            <div
+              style={{
+                ...panelStyle,
+                padding: "24px 28px",
+                position: "relative",
+                height: "100%",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "clamp(42px, 5vw, 70px)",
+                  fontWeight: "bold",
+                  color: localTimeLeft <= 5 ? GOLD : "white",
+                  marginBottom: 16,
+                  textAlign: "center",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  animation:
+                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
+                }}
+              >
+                ⏳ {localTimeLeft}
+              </div>
+
+              {renderQuestionMedia(currentQuestion, "tv")}
+
+              <h2
+                style={{
+                  fontSize: "clamp(24px, 2.8vw, 42px)",
+                  lineHeight: 1.2,
+                  margin: "0 0 20px 0",
+                  textAlign: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {currentQuestion.question}
+              </h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
+                }}
+              >
+                <div
+                  style={{
+                    ...getTvOptionStyle("A"),
+                    fontSize: "clamp(20px, 2vw, 30px)",
+                    padding: "18px 20px",
+                    minHeight: 90,
+                    display: "flex",
+                    alignItems: "center",
+                    animation: "answerFlashPop 0.25s ease",
+                  }}
+                >
+                  A - {currentQuestion.option_a}
+                </div>
+
+                <div
+                  style={{
+                    ...getTvOptionStyle("B"),
+                    fontSize: "clamp(20px, 2vw, 30px)",
+                    padding: "18px 20px",
+                    minHeight: 90,
+                    display: "flex",
+                    alignItems: "center",
+                    animation: "answerFlashPop 0.25s ease",
+                  }}
+                >
+                  B - {currentQuestion.option_b}
+                </div>
+
+                {currentQuestion.option_c && (
+                  <div
+                    style={{
+                      ...getTvOptionStyle("C"),
+                      fontSize: "clamp(20px, 2vw, 30px)",
+                      padding: "18px 20px",
+                      minHeight: 90,
+                      display: "flex",
+                      alignItems: "center",
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    C - {currentQuestion.option_c}
+                  </div>
+                )}
+
+                {currentQuestion.option_d && (
+                  <div
+                    style={{
+                      ...getTvOptionStyle("D"),
+                      fontSize: "clamp(20px, 2vw, 30px)",
+                      padding: "18px 20px",
+                      minHeight: 90,
+                      display: "flex",
+                      alignItems: "center",
+                      animation: "answerFlashPop 0.25s ease",
+                    }}
+                  >
+                    D - {currentQuestion.option_d}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
+            <div
+              style={{
+                ...panelStyle,
+                padding: "24px 28px",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
+                overflow: "hidden",
+                textAlign: "center",
+                animation: "correctRevealGlow 0.35s ease",
+              }}
+            >
+              {renderQuestionMedia(currentQuestion, "tv")}
+
+              <h2
+                style={{
+                  fontSize: "clamp(28px, 3.6vw, 48px)",
+                  margin: "0 0 10px 0",
+                  flexShrink: 0,
+                }}
+              >
+                📊 Percentuali risposte
+              </h2>
+
+              <div
+                style={{
+                  fontSize: "clamp(18px, 2vw, 28px)",
+                  color: GOLD,
+                  marginBottom: 18,
+                  flexShrink: 0,
+                }}
+              >
+                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
+                }}
+              >
+                {renderStatsBar("A", currentQuestion.option_a)}
+                {renderStatsBar("B", currentQuestion.option_b)}
+                {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
+                {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
+              </div>
+            </div>
+          )}
+
+          {game?.phase === "reveal" && currentQuestion && !game?.show_leaderboard && (
+            <div
+              style={{
+                ...panelStyle,
+                padding: "24px 28px",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
+                overflow: "hidden",
+                textAlign: "center",
+                animation: "correctRevealGlow 0.45s ease",
+              }}
+            >
+              {renderQuestionMedia(currentQuestion, "tv")}
+
+              <h2
+                style={{
+                  fontSize: "clamp(32px, 4vw, 54px)",
+                  color: GREEN,
+                  margin: "0 0 12px 0",
+                  flexShrink: 0,
+                }}
+              >
+                ✅ Risposta corretta: {currentQuestion.correct_answer}
+              </h2>
+
+              {currentQuestion.explanation && (
+                <p
+                  style={{
+                    fontSize: "clamp(18px, 2vw, 28px)",
+                    margin: "0 0 20px 0",
+                    opacity: 0.96,
+                    flexShrink: 0,
+                  }}
+                >
+                  {currentQuestion.explanation}
+                </p>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  width: "100%",
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  flex: 1,
+                  alignContent: "center",
+                }}
+              >
+                <div style={getTvRevealOptionStyle("A", currentQuestion.correct_answer)}>
+                  A - {currentQuestion.option_a}
+                </div>
+
+                <div style={getTvRevealOptionStyle("B", currentQuestion.correct_answer)}>
+                  B - {currentQuestion.option_b}
+                </div>
+
+                {currentQuestion.option_c && (
+                  <div style={getTvRevealOptionStyle("C", currentQuestion.correct_answer)}>
+                    C - {currentQuestion.option_c}
+                  </div>
+                )}
+
+                {currentQuestion.option_d && (
+                  <div style={getTvRevealOptionStyle("D", currentQuestion.correct_answer)}>
+                    D - {currentQuestion.option_d}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {game?.phase === "final" && (
+            <div
+              style={{
+                ...panelStyle,
+                padding: 40,
+                height: "100%",
+                overflow: "hidden",
+              }}
+            >
+              <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
+                🏆 PODIO FINALE
+              </h2>
+
+              <div style={{ display: "grid", gap: 18, maxWidth: 800, margin: "0 auto" }}>
+                {finalRevealIndex >= 2 && podiumPlayers[2] && (
+                  <div
+                    style={{
+                      ...panelStyle,
+                      fontSize: 34,
+                      background: "rgba(205,127,50,0.22)",
+                      animation: "podiumRise 0.8s ease",
+                    }}
+                  >
+                    🥉 3° POSTO — {podiumPlayers[2].name} — {podiumPlayers[2].score} punti
+                  </div>
+                )}
+
+                {finalRevealIndex >= 1 && podiumPlayers[1] && (
+                  <div
+                    style={{
+                      ...panelStyle,
+                      fontSize: 38,
+                      background: "rgba(192,192,192,0.22)",
+                      animation: "podiumRise 0.8s ease",
+                    }}
+                  >
+                    🥈 2° POSTO — {podiumPlayers[1].name} — {podiumPlayers[1].score} punti
+                  </div>
+                )}
+
+                {finalRevealIndex >= 0 && podiumPlayers[0] && (
+                  <div
+                    style={{
+                      ...panelStyle,
+                      fontSize: 46,
+                      background: "rgba(255,215,64,0.25)",
+                      animation: "winnerGlow 1.6s infinite",
+                      border: "2px solid rgba(255,215,64,0.8)",
+                    }}
+                  >
+                    🥇 1° POSTO — {podiumPlayers[0].name} — {podiumPlayers[0].score} punti
+                    <div style={{ fontSize: 56, marginTop: 16 }}>🎉 VINCITORE! 🎉</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
   }
+/* =====================================================
+   PARTE 11 - RENDER SCHERMATA HOST E CHIUSURA COMPONENTE
+===================================================== */
 
   return (
     <div style={{ ...containerStyle, position: "relative" }}>
