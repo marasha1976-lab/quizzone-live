@@ -7,6 +7,21 @@ import { createClient } from "@supabase/supabase-js";
 import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
 
+// 🔧 FIX FULLSCREEN GLOBALE (ELIMINA SPAZI BIANCHI)
+if (typeof document !== "undefined") {
+  document.documentElement.style.margin = "0";
+  document.documentElement.style.padding = "0";
+  document.documentElement.style.width = "100%";
+  document.documentElement.style.height = "100%";
+
+  document.body.style.margin = "0";
+  document.body.style.padding = "0";
+  document.body.style.width = "100%";
+  document.body.style.height = "100%";
+  document.body.style.overflow = "hidden";
+  document.body.style.background = "#0f172a";
+}
+
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
