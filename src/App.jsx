@@ -2098,7 +2098,9 @@ export default function App() {
     return (
       <div
         style={{
-          ...containerStyle,
+          position: "fixed",
+          inset: 0,
+          background: APP_BG,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2142,316 +2144,36 @@ export default function App() {
 
         <div
           style={{
-            ...panelStyle,
             width: "100%",
-            maxWidth: 600,
-            textAlign: "center",
-            animation: "popIn 0.6s ease",
-          }}
-        >
-          <h1 style={{ fontSize: 44, marginBottom: 10 }}>🍻 {getGameTitle(game)}</h1>
-          <p style={{ opacity: 0.85, marginBottom: 24 }}>Scegli come vuoi entrare</p>
-          <button onClick={() => setRole("host")} style={buttonStyle}>
-            HOST
-          </button>
-          <button onClick={() => setRole("player")} style={buttonStyle}>
-            GIOCATORE
-          </button>
-          <button onClick={() => setRole("tv")} style={buttonStyle}>
-            TV
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (role === "player") {
-    if (!joinedPlayer) {
-      return (
-        <div
-          style={{
-            ...containerStyle,
+            height: "100%",
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            position: "relative",
-            overflow: "hidden",
+            textAlign: "center",
+            animation: "popIn 0.6s ease",
+            padding: "20px",
           }}
         >
-          <div style={playerBackgroundLogoStyle}>
-            <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+          <h1 style={{ fontSize: 44, marginBottom: 10 }}>
+            🍻 {getGameTitle(game)}
+          </h1>
+
+          <p style={{ opacity: 0.85, marginBottom: 24 }}>
+            Scegli come vuoi entrare
+          </p>
+
+          <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+            <button onClick={() => setRole("host")} style={buttonStyle}>
+              HOST
+            </button>
+            <button onClick={() => setRole("player")} style={buttonStyle}>
+              GIOCATORE
+            </button>
+            <button onClick={() => setRole("tv")} style={buttonStyle}>
+              TV
+            </button>
           </div>
-
-          <div style={{ ...panelStyle, width: "100%", maxWidth: 560, textAlign: "center" }}>
-            <h1>Entra nel quiz</h1>
-            <p>
-              <b>Codice partita:</b> {GAME_CODE}
-            </p>
-            <p>
-              <b>Stato:</b> {status}
-            </p>
-
-            <div style={{ marginTop: 18 }}>
-              <input
-                placeholder="Nome squadra"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                style={{
-                  padding: 14,
-                  width: "100%",
-                  maxWidth: 340,
-                  borderRadius: 12,
-                  border: "none",
-                  marginBottom: 14,
-                  fontSize: 16,
-                  position: "relative",
-                  zIndex: 1,
-                }}
-              />
-            </div>
-
-            {isLoading ? (
-              <div
-                style={{
-                  marginTop: 18,
-                  padding: 16,
-                  borderRadius: 12,
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  fontWeight: "bold",
-                  maxWidth: 420,
-                  marginLeft: "auto",
-                  marginRight: "auto",
-                  position: "relative",
-                  zIndex: 1,
-                }}
-              >
-                Caricamento partita...
-              </div>
-            ) : game?.phase !== "lobby" ? (
-              <div
-                style={{
-                  marginTop: 18,
-                  padding: 16,
-                  borderRadius: 12,
-                  background: "rgba(255,87,34,0.18)",
-                  border: "1px solid rgba(255,87,34,0.45)",
-                  fontWeight: "bold",
-                  maxWidth: 420,
-                  marginLeft: "auto",
-                  marginRight: "auto",
-                  position: "relative",
-                  zIndex: 1,
-                }}
-              >
-                Partita in corso, attendi una nuova partita
-              </div>
-            ) : (
-              <button onClick={joinGame} style={buttonStyle}>
-                Entra
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ ...containerStyle, position: "relative", overflow: "hidden" }}>
-        <div style={playerBackgroundLogoStyle}>
-          <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
-        </div>
-
-        {answerFeedback && (
-          <div style={feedbackOverlayStyle}>
-            <div
-              style={{
-                ...panelStyle,
-                minWidth: 280,
-                textAlign: "center",
-                border:
-                  answerFeedback.type === "correct"
-                    ? "2px solid rgba(36,193,107,0.85)"
-                    : "2px solid rgba(255,87,34,0.85)",
-                background:
-                  answerFeedback.type === "correct"
-                    ? "rgba(36,193,107,0.18)"
-                    : "rgba(255,87,34,0.18)",
-                animation: "answerFlashPop 0.22s ease",
-              }}
-            >
-              <div style={{ fontSize: 52, marginBottom: 8 }}>
-                {answerFeedback.type === "correct" ? "✅" : "❌"}
-              </div>
-              <div style={{ fontSize: 34, fontWeight: "bold" }}>
-                {answerFeedback.type === "correct" ? "RISPOSTA ESATTA" : "RISPOSTA SBAGLIATA"}
-              </div>
-              {typeof answerFeedback.points === "number" && answerFeedback.points > 0 && (
-                <div style={{ fontSize: 24, marginTop: 10, color: GOLD }}>
-                  +{answerFeedback.points} punti
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{ maxWidth: 760, margin: "0 auto", position: "relative", zIndex: 1 }}>
-          <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
-            <h1 style={{ marginBottom: 8 }}>🎮 {joinedPlayer.name}</h1>
-            <p>
-              <b>Punti:</b> {joinedPlayer.score || 0}
-            </p>
-            <p>
-              <b>Stato:</b> {status}
-            </p>
-
-            {!jollyUsed && effectivePhase === "question" && localTimeLeft > 0 && (
-              <button
-                onClick={useJollyCard}
-                style={{
-                  ...buttonStyle,
-                  background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-                }}
-              >
-                USA JOLLY
-              </button>
-            )}
-
-            {jollyUsed && <p style={{ color: GOLD, fontWeight: "bold" }}>JOLLY già usato</p>}
-          </div>
-
-          {game?.phase === "lobby" && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              <h2>Attendi l'inizio del quiz...</h2>
-            </div>
-          )}
-
-          {effectivePhase === "countdown" && currentQuestion && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              {renderQuestionMedia(currentQuestion, "player")}
-              <div style={{ fontSize: 24, opacity: 0.85, marginBottom: 12 }}>
-                Prossima domanda tra...
-              </div>
-              <div style={{ fontSize: 64, fontWeight: "bold", color: GOLD }}>
-                {countdownTimeLeft}
-              </div>
-            </div>
-          )}
-
-          {effectivePhase === "question" && currentQuestion && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: 42,
-                  fontWeight: "bold",
-                  marginBottom: 16,
-                  color: localTimeLeft <= 5 ? GOLD : "white",
-                  animation:
-                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
-                }}
-              >
-                ⏳ {localTimeLeft}s
-              </div>
-
-              {renderQuestionMedia(currentQuestion, "player")}
-
-              <h2 style={{ fontSize: 30, lineHeight: 1.25 }}>{currentQuestion.question}</h2>
-
-              <div style={{ display: "grid", gap: 12, maxWidth: 520, margin: "24px auto 0" }}>
-                <button
-                  onClick={() => submitAnswer("A")}
-                  disabled={!!selectedAnswer || localTimeLeft <= 0}
-                  style={getPlayerAnswerButtonStyle(
-                    "A",
-                    !!selectedAnswer || localTimeLeft <= 0,
-                    selectedAnswer === "A"
-                  )}
-                >
-                  A - {currentQuestion.option_a}
-                </button>
-
-                <button
-                  onClick={() => submitAnswer("B")}
-                  disabled={!!selectedAnswer || localTimeLeft <= 0}
-                  style={getPlayerAnswerButtonStyle(
-                    "B",
-                    !!selectedAnswer || localTimeLeft <= 0,
-                    selectedAnswer === "B"
-                  )}
-                >
-                  B - {currentQuestion.option_b}
-                </button>
-
-                {currentQuestion.option_c && (
-                  <button
-                    onClick={() => submitAnswer("C")}
-                    disabled={!!selectedAnswer || localTimeLeft <= 0}
-                    style={getPlayerAnswerButtonStyle(
-                      "C",
-                      !!selectedAnswer || localTimeLeft <= 0,
-                      selectedAnswer === "C"
-                    )}
-                  >
-                    C - {currentQuestion.option_c}
-                  </button>
-                )}
-
-                {currentQuestion.option_d && (
-                  <button
-                    onClick={() => submitAnswer("D")}
-                    disabled={!!selectedAnswer || localTimeLeft <= 0}
-                    style={getPlayerAnswerButtonStyle(
-                      "D",
-                      !!selectedAnswer || localTimeLeft <= 0,
-                      selectedAnswer === "D"
-                    )}
-                  >
-                    D - {currentQuestion.option_d}
-                  </button>
-                )}
-              </div>
-
-              {selectedAnswer && (
-                <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
-                  Hai risposto: {selectedAnswer}
-                </p>
-              )}
-
-              {!selectedAnswer && localTimeLeft <= 0 && (
-                <p style={{ marginTop: 18, color: RED, fontWeight: "bold" }}>
-                  Tempo scaduto
-                </p>
-              )}
-            </div>
-          )}
-
-          {game?.phase === "stats" && currentQuestion && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              {renderQuestionMedia(currentQuestion, "player")}
-              <h2 style={{ marginBottom: 10 }}>📊 Risposte raccolte</h2>
-              <p style={{ fontSize: 18, opacity: 0.92 }}>
-                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
-              </p>
-              <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
-                Attendi che l'host mostri la risposta corretta
-              </p>
-            </div>
-          )}
-
-          {game?.phase === "reveal" && currentQuestion && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              {renderQuestionMedia(currentQuestion, "player")}
-              <h2 style={{ color: GREEN }}>✅ Risposta corretta: {currentQuestion.correct_answer}</h2>
-              <p style={{ fontSize: 18 }}>{currentQuestion.explanation}</p>
-            </div>
-          )}
-
-          {game?.phase === "final" && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
-              <h2>🏁 Quiz terminato</h2>
-              <p>Guarda il podio finale.</p>
-            </div>
-          )}
         </div>
       </div>
     );
