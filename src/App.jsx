@@ -198,7 +198,7 @@ function getCountdownSecondsBeforeStart(game, nowMs = Date.now()) {
 }
 
 function getGameTitle(game) {
-  return game?.title || "test vercel";
+  return game?.title || "test vercel prova";
 }
 
 function getAnswerColor(letter) {
@@ -659,7 +659,7 @@ export default function App() {
       .insert([
         {
           code: GAME_CODE,
-          title: "test vercel",
+          title: "test vercel prova",
           phase: "lobby",
           current_question_index: 0,
           time_left: 0,
