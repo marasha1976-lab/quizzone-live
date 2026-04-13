@@ -659,7 +659,7 @@ export default function App() {
       .insert([
         {
           code: GAME_CODE,
-          title: "Il Quizzone di Simone",
+          title: "test vercel",
           phase: "lobby",
           current_question_index: 0,
           time_left: 0,
