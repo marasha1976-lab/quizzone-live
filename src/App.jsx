@@ -222,19 +222,19 @@ function getTvOptionStyle(letter, extra = {}) {
     background: getAnswerColor(letter),
     border: "2px solid rgba(255,255,255,0.16)",
     borderRadius: 18,
-    padding: 16,
+    padding: 20,
     boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "bold",
     color: "white",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
     textAlign: "left",
-    lineHeight: 1.15,
+    lineHeight: 1.2,
     wordBreak: "break-word",
     overflowWrap: "anywhere",
-    minHeight: 74,
+    minHeight: 90,
     transition: "all 0.25s ease",
     ...extra,
   };
@@ -250,7 +250,7 @@ function getTvRevealOptionStyle(letter, correctAnswer) {
     boxShadow: isCorrect
       ? "0 0 0 4px rgba(255,255,255,0.12), 0 0 30px rgba(34,197,94,0.65)"
       : "0 8px 20px rgba(0,0,0,0.18)",
-    transform: isCorrect ? "scale(1.02)" : "scale(1)",
+    transform: isCorrect ? "scale(1.03)" : "scale(1)",
     opacity: isCorrect ? 1 : 0.45,
     filter: isCorrect ? "brightness(1.12)" : "brightness(0.7)",
   });
@@ -2431,7 +2431,7 @@ export default function App() {
         <div
           style={{
             ...panelStyle,
-            padding: 14,
+            padding: 12,
             height: "100%",
             display: "flex",
             alignItems: "center",
@@ -2446,7 +2446,7 @@ export default function App() {
               style={{
                 width: "100%",
                 height: "100%",
-                objectFit: mode === "countdown" ? "contain" : "contain",
+                objectFit: "contain",
                 borderRadius: 16,
                 background: "rgba(0,0,0,0.18)",
               }}
@@ -2645,9 +2645,9 @@ export default function App() {
             height: "100%",
             boxSizing: "border-box",
             paddingTop: 132,
-            paddingBottom: 18,
-            paddingLeft: 18,
-            paddingRight: 18,
+            paddingBottom: 16,
+            paddingLeft: 16,
+            paddingRight: 16,
             overflow: "hidden",
           }}
         >
@@ -2925,8 +2925,8 @@ export default function App() {
               style={{
                 height: "100%",
                 display: tvHasImage ? "grid" : "flex",
-                gridTemplateColumns: tvHasImage ? "1.15fr 0.85fr" : undefined,
-                gap: 16,
+                gridTemplateColumns: tvHasImage ? "0.8fr 1.2fr" : undefined,
+                gap: 14,
                 alignItems: "stretch",
                 overflow: "hidden",
               }}
@@ -2965,8 +2965,8 @@ export default function App() {
               style={{
                 height: "100%",
                 display: tvHasQuestionMedia ? "grid" : "flex",
-                gridTemplateColumns: tvHasQuestionMedia ? "1.02fr 1.18fr" : undefined,
-                gap: 16,
+                gridTemplateColumns: tvHasQuestionMedia ? "0.72fr 1.28fr" : undefined,
+                gap: 14,
                 overflow: "hidden",
                 alignItems: "stretch",
               }}
@@ -2980,17 +2980,17 @@ export default function App() {
               <div
                 style={{
                   ...panelStyle,
-                  padding: 18,
+                  padding: 16,
                   minHeight: 0,
                   overflow: "hidden",
                   display: "grid",
                   gridTemplateRows: "auto auto minmax(0, 1fr)",
-                  gap: 14,
+                  gap: 12,
                 }}
               >
                 <div
                   style={{
-                    fontSize: "clamp(34px, 4vw, 62px)",
+                    fontSize: "clamp(30px, 3.5vw, 58px)",
                     fontWeight: "bold",
                     color: localTimeLeft <= 5 ? GOLD : "white",
                     textAlign: "center",
@@ -3005,9 +3005,9 @@ export default function App() {
                 <h2
                   style={{
                     fontSize: tvHasQuestionMedia
-                      ? "clamp(22px, 2vw, 34px)"
+                      ? "clamp(18px, 1.65vw, 28px)"
                       : "clamp(28px, 2.6vw, 44px)",
-                    lineHeight: 1.15,
+                    lineHeight: 1.1,
                     margin: 0,
                     textAlign: "center",
                     overflow: "hidden",
@@ -3020,7 +3020,7 @@ export default function App() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
-                    gap: 12,
+                    gap: 10,
                     minHeight: 0,
                     alignContent: "start",
                   }}
@@ -3029,9 +3029,11 @@ export default function App() {
                     style={{
                       ...getTvOptionStyle("A"),
                       fontSize: tvHasQuestionMedia
-                        ? "clamp(18px, 1.45vw, 24px)"
+                        ? "clamp(15px, 1.1vw, 19px)"
                         : "clamp(22px, 1.8vw, 30px)",
-                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      minHeight: tvHasQuestionMedia ? 60 : 88,
+                      padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                      lineHeight: 1.08,
                       animation: "answerFlashPop 0.25s ease",
                     }}
                   >
@@ -3042,9 +3044,11 @@ export default function App() {
                     style={{
                       ...getTvOptionStyle("B"),
                       fontSize: tvHasQuestionMedia
-                        ? "clamp(18px, 1.45vw, 24px)"
+                        ? "clamp(15px, 1.1vw, 19px)"
                         : "clamp(22px, 1.8vw, 30px)",
-                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      minHeight: tvHasQuestionMedia ? 60 : 88,
+                      padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                      lineHeight: 1.08,
                       animation: "answerFlashPop 0.25s ease",
                     }}
                   >
@@ -3056,9 +3060,11 @@ export default function App() {
                       style={{
                         ...getTvOptionStyle("C"),
                         fontSize: tvHasQuestionMedia
-                          ? "clamp(18px, 1.45vw, 24px)"
+                          ? "clamp(15px, 1.1vw, 19px)"
                           : "clamp(22px, 1.8vw, 30px)",
-                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        minHeight: tvHasQuestionMedia ? 60 : 88,
+                        padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                        lineHeight: 1.08,
                         animation: "answerFlashPop 0.25s ease",
                       }}
                     >
@@ -3071,9 +3077,11 @@ export default function App() {
                       style={{
                         ...getTvOptionStyle("D"),
                         fontSize: tvHasQuestionMedia
-                          ? "clamp(18px, 1.45vw, 24px)"
+                          ? "clamp(15px, 1.1vw, 19px)"
                           : "clamp(22px, 1.8vw, 30px)",
-                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        minHeight: tvHasQuestionMedia ? 60 : 88,
+                        padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                        lineHeight: 1.08,
                         animation: "answerFlashPop 0.25s ease",
                       }}
                     >
@@ -3090,8 +3098,8 @@ export default function App() {
               style={{
                 height: "100%",
                 display: tvHasImage ? "grid" : "flex",
-                gridTemplateColumns: tvHasImage ? "0.98fr 1.22fr" : undefined,
-                gap: 16,
+                gridTemplateColumns: tvHasImage ? "0.8fr 1.2fr" : undefined,
+                gap: 14,
                 overflow: "hidden",
                 alignItems: "stretch",
               }}
@@ -3105,12 +3113,12 @@ export default function App() {
               <div
                 style={{
                   ...panelStyle,
-                  padding: 18,
+                  padding: 16,
                   minHeight: 0,
                   overflow: "hidden",
                   display: "grid",
                   gridTemplateRows: "auto auto minmax(0, 1fr)",
-                  gap: 14,
+                  gap: 12,
                   textAlign: "center",
                   animation: "correctRevealGlow 0.35s ease",
                 }}
@@ -3123,7 +3131,7 @@ export default function App() {
 
                 <h2
                   style={{
-                    fontSize: "clamp(28px, 3.2vw, 46px)",
+                    fontSize: "clamp(26px, 3vw, 44px)",
                     margin: 0,
                   }}
                 >
@@ -3132,7 +3140,7 @@ export default function App() {
 
                 <div
                   style={{
-                    fontSize: "clamp(18px, 1.8vw, 28px)",
+                    fontSize: "clamp(16px, 1.7vw, 26px)",
                     color: GOLD,
                   }}
                 >
@@ -3143,7 +3151,7 @@ export default function App() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
-                    gap: 12,
+                    gap: 10,
                     minHeight: 0,
                     alignContent: "start",
                   }}
@@ -3162,8 +3170,8 @@ export default function App() {
               style={{
                 height: "100%",
                 display: tvHasImage ? "grid" : "flex",
-                gridTemplateColumns: tvHasImage ? "0.98fr 1.22fr" : undefined,
-                gap: 16,
+                gridTemplateColumns: tvHasImage ? "0.8fr 1.2fr" : undefined,
+                gap: 14,
                 overflow: "hidden",
                 alignItems: "stretch",
               }}
@@ -3177,12 +3185,12 @@ export default function App() {
               <div
                 style={{
                   ...panelStyle,
-                  padding: 18,
+                  padding: 16,
                   minHeight: 0,
                   overflow: "hidden",
                   display: "grid",
                   gridTemplateRows: "auto auto minmax(0, 1fr)",
-                  gap: 14,
+                  gap: 12,
                   textAlign: "center",
                   animation: "correctRevealGlow 0.45s ease",
                 }}
@@ -3196,7 +3204,7 @@ export default function App() {
                 <div>
                   <h2
                     style={{
-                      fontSize: "clamp(28px, 3.2vw, 48px)",
+                      fontSize: "clamp(24px, 2.9vw, 44px)",
                       color: GREEN,
                       margin: 0,
                     }}
@@ -3208,7 +3216,7 @@ export default function App() {
                 {currentQuestion.explanation ? (
                   <p
                     style={{
-                      fontSize: "clamp(16px, 1.5vw, 24px)",
+                      fontSize: "clamp(15px, 1.3vw, 22px)",
                       margin: 0,
                       opacity: 0.96,
                     }}
@@ -3223,7 +3231,7 @@ export default function App() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
-                    gap: 12,
+                    gap: 10,
                     minHeight: 0,
                     alignContent: "start",
                   }}
@@ -3232,9 +3240,11 @@ export default function App() {
                     style={{
                       ...getTvRevealOptionStyle("A", currentQuestion.correct_answer),
                       fontSize: tvHasQuestionMedia
-                        ? "clamp(18px, 1.45vw, 24px)"
+                        ? "clamp(15px, 1.1vw, 19px)"
                         : "clamp(22px, 1.8vw, 30px)",
-                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      minHeight: tvHasQuestionMedia ? 60 : 88,
+                      padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                      lineHeight: 1.08,
                     }}
                   >
                     A - {currentQuestion.option_a}
@@ -3244,9 +3254,11 @@ export default function App() {
                     style={{
                       ...getTvRevealOptionStyle("B", currentQuestion.correct_answer),
                       fontSize: tvHasQuestionMedia
-                        ? "clamp(18px, 1.45vw, 24px)"
+                        ? "clamp(15px, 1.1vw, 19px)"
                         : "clamp(22px, 1.8vw, 30px)",
-                      minHeight: tvHasQuestionMedia ? 72 : 88,
+                      minHeight: tvHasQuestionMedia ? 60 : 88,
+                      padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                      lineHeight: 1.08,
                     }}
                   >
                     B - {currentQuestion.option_b}
@@ -3257,9 +3269,11 @@ export default function App() {
                       style={{
                         ...getTvRevealOptionStyle("C", currentQuestion.correct_answer),
                         fontSize: tvHasQuestionMedia
-                          ? "clamp(18px, 1.45vw, 24px)"
+                          ? "clamp(15px, 1.1vw, 19px)"
                           : "clamp(22px, 1.8vw, 30px)",
-                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        minHeight: tvHasQuestionMedia ? 60 : 88,
+                        padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                        lineHeight: 1.08,
                       }}
                     >
                       C - {currentQuestion.option_c}
@@ -3271,9 +3285,11 @@ export default function App() {
                       style={{
                         ...getTvRevealOptionStyle("D", currentQuestion.correct_answer),
                         fontSize: tvHasQuestionMedia
-                          ? "clamp(18px, 1.45vw, 24px)"
+                          ? "clamp(15px, 1.1vw, 19px)"
                           : "clamp(22px, 1.8vw, 30px)",
-                        minHeight: tvHasQuestionMedia ? 72 : 88,
+                        minHeight: tvHasQuestionMedia ? 60 : 88,
+                        padding: tvHasQuestionMedia ? "12px 14px" : "20px",
+                        lineHeight: 1.08,
                       }}
                     >
                       D - {currentQuestion.option_d}
