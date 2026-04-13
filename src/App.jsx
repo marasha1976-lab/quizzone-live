@@ -2922,8 +2922,7 @@ export default function App() {
             </div>
           )}
 
-                    {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
-            <div          {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
+                            {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
             <div
               style={{
                 ...panelStyle,
@@ -2953,9 +2952,7 @@ export default function App() {
                 style={{
                   minHeight: 0,
                   height: "100%",
-                  display: tvHasImage
-                    ? "grid"
-                    : "flex",
+                  display: tvHasImage ? "grid" : "flex",
                   gridTemplateColumns: tvHasImage ? "minmax(0, 0.9fr) minmax(0, 1.1fr)" : undefined,
                   gap: 12,
                   overflow: "hidden",
@@ -3119,6 +3116,9 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
+            <div
               style={{
                 height: "100%",
                 display: tvHasImage ? "grid" : "flex",
@@ -3133,7 +3133,6 @@ export default function App() {
                   {renderTvMediaPanel(currentQuestion, "stats")}
                 </div>
               )}
-
               <div
                 style={{
                   ...panelStyle,
