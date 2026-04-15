@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
 
-// 🔧 FIX FULLSCREEN GLOBALE (ELIMINA SPAZI BIANCHI)
+// FIX BASE PAGINA: ELIMINA MARGINI BIANCHI SENZA SPACCARE HOST/PLAYER
 if (typeof document !== "undefined") {
   document.documentElement.style.margin = "0";
   document.documentElement.style.padding = "0";
@@ -17,8 +17,7 @@ if (typeof document !== "undefined") {
   document.body.style.margin = "0";
   document.body.style.padding = "0";
   document.body.style.width = "100%";
-  document.body.style.height = "100%";
-  document.body.style.overflow = "hidden";
+  document.body.style.minHeight = "100%";
   document.body.style.background = "#0f172a";
 }
 
@@ -136,6 +135,7 @@ const playerBackgroundLogoImageStyle = {
   maxWidth: 520,
   height: "auto",
 };
+
 /* =====================================================
    PARTE 2 - FUNZIONI UTILI GENERALI
 ===================================================== */
@@ -198,7 +198,7 @@ function getCountdownSecondsBeforeStart(game, nowMs = Date.now()) {
 }
 
 function getGameTitle(game) {
-  return game?.title || "test vercel prova";
+  return game?.title || "Il Quizzone di Simone";
 }
 
 function getAnswerColor(letter) {
@@ -277,6 +277,7 @@ function getTvRevealOptionStyle(letter, correctAnswer) {
     filter: isCorrect ? "brightness(1.12)" : "brightness(0.7)",
   });
 }
+
 /* =====================================================
    PARTE 3 - HOOK AUDIO
 ===================================================== */
@@ -425,6 +426,7 @@ function useRevealAudio() {
 
   return { playRevealAudio };
 }
+
 /* =====================================================
    PARTE 4 - COMPONENTE APP: STATE, REF, TEMPO E MEMO PRINCIPALI
 ===================================================== */
@@ -636,6 +638,7 @@ export default function App() {
     if (players.length <= 10) return 120;
     return 110;
   }, [players.length]);
+
 /* =====================================================
    PARTE 5 - CARICAMENTO DATI, GAME SETUP, EVENTI E IMPORT CSV
 ===================================================== */
@@ -659,7 +662,7 @@ export default function App() {
       .insert([
         {
           code: GAME_CODE,
-          title: "test vercel prova",
+          title: "Il Quizzone di Simone",
           phase: "lobby",
           current_question_index: 0,
           time_left: 0,
@@ -912,6 +915,7 @@ export default function App() {
       },
     });
   }
+
 /* =====================================================
    PARTE 6 - AZIONI PRINCIPALI DEL QUIZ
 ===================================================== */
@@ -1412,6 +1416,7 @@ export default function App() {
       submitLockRef.current = false;
     }
   }
+
 /* =====================================================
    PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
 ===================================================== */
@@ -1926,6 +1931,7 @@ export default function App() {
       clearTimeout(t3);
     };
   }, [game?.phase]);
+
 /* =====================================================
    PARTE 8 - STILI LOCALI E FUNZIONI RENDER
 ===================================================== */
@@ -2090,6 +2096,7 @@ export default function App() {
       </div>
     );
   };
+
 /* =====================================================
    PARTE 9 - RENDER SCHERMATA SCELTA RUOLO E PLAYER
 ===================================================== */
@@ -2144,40 +2151,321 @@ export default function App() {
 
         <div
           style={{
+            ...panelStyle,
             width: "100%",
-            height: "100%",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
+            maxWidth: 600,
             textAlign: "center",
             animation: "popIn 0.6s ease",
-            padding: "20px",
           }}
         >
-          <h1 style={{ fontSize: 44, marginBottom: 10 }}>
-            🍻 {getGameTitle(game)}
-          </h1>
-
-          <p style={{ opacity: 0.85, marginBottom: 24 }}>
-            Scegli come vuoi entrare
-          </p>
-
-          <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-            <button onClick={() => setRole("host")} style={buttonStyle}>
-              HOST
-            </button>
-            <button onClick={() => setRole("player")} style={buttonStyle}>
-              GIOCATORE
-            </button>
-            <button onClick={() => setRole("tv")} style={buttonStyle}>
-              TV
-            </button>
-          </div>
+          <h1 style={{ fontSize: 44, marginBottom: 10 }}>🍻 {getGameTitle(game)}</h1>
+          <p style={{ opacity: 0.85, marginBottom: 24 }}>Scegli come vuoi entrare</p>
+          <button onClick={() => setRole("host")} style={buttonStyle}>
+            HOST
+          </button>
+          <button onClick={() => setRole("player")} style={buttonStyle}>
+            GIOCATORE
+          </button>
+          <button onClick={() => setRole("tv")} style={buttonStyle}>
+            TV
+          </button>
         </div>
       </div>
     );
   }
+
+  if (role === "player") {
+    if (!joinedPlayer) {
+      return (
+        <div
+          style={{
+            ...containerStyle,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div style={playerBackgroundLogoStyle}>
+            <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+          </div>
+
+          <div style={{ ...panelStyle, width: "100%", maxWidth: 560, textAlign: "center" }}>
+            <h1>Entra nel quiz</h1>
+            <p>
+              <b>Codice partita:</b> {GAME_CODE}
+            </p>
+            <p>
+              <b>Stato:</b> {status}
+            </p>
+
+            <div style={{ marginTop: 18 }}>
+              <input
+                placeholder="Nome squadra"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                style={{
+                  padding: 14,
+                  width: "100%",
+                  maxWidth: 340,
+                  borderRadius: 12,
+                  border: "none",
+                  marginBottom: 14,
+                  fontSize: 16,
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              />
+            </div>
+
+            {isLoading ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 16,
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  fontWeight: "bold",
+                  maxWidth: 420,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                Caricamento partita...
+              </div>
+            ) : game?.phase !== "lobby" ? (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: 16,
+                  borderRadius: 12,
+                  background: "rgba(255,87,34,0.18)",
+                  border: "1px solid rgba(255,87,34,0.45)",
+                  fontWeight: "bold",
+                  maxWidth: 420,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                Partita in corso, attendi una nuova partita
+              </div>
+            ) : (
+              <button onClick={joinGame} style={buttonStyle}>
+                Entra
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ ...containerStyle, position: "relative", overflow: "hidden" }}>
+        <div style={playerBackgroundLogoStyle}>
+          <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+        </div>
+
+        {answerFeedback && (
+          <div style={feedbackOverlayStyle}>
+            <div
+              style={{
+                ...panelStyle,
+                minWidth: 280,
+                textAlign: "center",
+                border:
+                  answerFeedback.type === "correct"
+                    ? "2px solid rgba(36,193,107,0.85)"
+                    : "2px solid rgba(255,87,34,0.85)",
+                background:
+                  answerFeedback.type === "correct"
+                    ? "rgba(36,193,107,0.18)"
+                    : "rgba(255,87,34,0.18)",
+                animation: "answerFlashPop 0.22s ease",
+              }}
+            >
+              <div style={{ fontSize: 52, marginBottom: 8 }}>
+                {answerFeedback.type === "correct" ? "✅" : "❌"}
+              </div>
+              <div style={{ fontSize: 34, fontWeight: "bold" }}>
+                {answerFeedback.type === "correct" ? "RISPOSTA ESATTA" : "RISPOSTA SBAGLIATA"}
+              </div>
+              {typeof answerFeedback.points === "number" && answerFeedback.points > 0 && (
+                <div style={{ fontSize: 24, marginTop: 10, color: GOLD }}>
+                  +{answerFeedback.points} punti
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ maxWidth: 760, margin: "0 auto", position: "relative", zIndex: 1 }}>
+          <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
+            <h1 style={{ marginBottom: 8 }}>🎮 {joinedPlayer.name}</h1>
+            <p>
+              <b>Punti:</b> {joinedPlayer.score || 0}
+            </p>
+            <p>
+              <b>Stato:</b> {status}
+            </p>
+
+            {!jollyUsed && effectivePhase === "question" && localTimeLeft > 0 && (
+              <button
+                onClick={useJollyCard}
+                style={{
+                  ...buttonStyle,
+                  background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                }}
+              >
+                USA JOLLY
+              </button>
+            )}
+
+            {jollyUsed && <p style={{ color: GOLD, fontWeight: "bold" }}>JOLLY già usato</p>}
+          </div>
+
+          {game?.phase === "lobby" && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <h2>Attendi l'inizio del quiz...</h2>
+            </div>
+          )}
+
+          {effectivePhase === "countdown" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <div style={{ fontSize: 24, opacity: 0.85, marginBottom: 12 }}>
+                Prossima domanda tra...
+              </div>
+              <div style={{ fontSize: 64, fontWeight: "bold", color: GOLD }}>
+                {countdownTimeLeft}
+              </div>
+            </div>
+          )}
+
+          {effectivePhase === "question" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 42,
+                  fontWeight: "bold",
+                  marginBottom: 16,
+                  color: localTimeLeft <= 5 ? GOLD : "white",
+                  animation:
+                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
+                }}
+              >
+                ⏳ {localTimeLeft}s
+              </div>
+
+              {renderQuestionMedia(currentQuestion, "player")}
+
+              <h2 style={{ fontSize: 30, lineHeight: 1.25 }}>{currentQuestion.question}</h2>
+
+              <div style={{ display: "grid", gap: 12, maxWidth: 520, margin: "24px auto 0" }}>
+                <button
+                  onClick={() => submitAnswer("A")}
+                  disabled={!!selectedAnswer || localTimeLeft <= 0}
+                  style={getPlayerAnswerButtonStyle(
+                    "A",
+                    !!selectedAnswer || localTimeLeft <= 0,
+                    selectedAnswer === "A"
+                  )}
+                >
+                  A - {currentQuestion.option_a}
+                </button>
+
+                <button
+                  onClick={() => submitAnswer("B")}
+                  disabled={!!selectedAnswer || localTimeLeft <= 0}
+                  style={getPlayerAnswerButtonStyle(
+                    "B",
+                    !!selectedAnswer || localTimeLeft <= 0,
+                    selectedAnswer === "B"
+                  )}
+                >
+                  B - {currentQuestion.option_b}
+                </button>
+
+                {currentQuestion.option_c && (
+                  <button
+                    onClick={() => submitAnswer("C")}
+                    disabled={!!selectedAnswer || localTimeLeft <= 0}
+                    style={getPlayerAnswerButtonStyle(
+                      "C",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "C"
+                    )}
+                  >
+                    C - {currentQuestion.option_c}
+                  </button>
+                )}
+
+                {currentQuestion.option_d && (
+                  <button
+                    onClick={() => submitAnswer("D")}
+                    disabled={!!selectedAnswer || localTimeLeft <= 0}
+                    style={getPlayerAnswerButtonStyle(
+                      "D",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "D"
+                    )}
+                  >
+                    D - {currentQuestion.option_d}
+                  </button>
+                )}
+              </div>
+
+              {selectedAnswer && (
+                <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
+                  Hai risposto: {selectedAnswer}
+                </p>
+              )}
+
+              {!selectedAnswer && localTimeLeft <= 0 && (
+                <p style={{ marginTop: 18, color: RED, fontWeight: "bold" }}>
+                  Tempo scaduto
+                </p>
+              )}
+            </div>
+          )}
+
+          {game?.phase === "stats" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <h2 style={{ marginBottom: 10 }}>📊 Risposte raccolte</h2>
+              <p style={{ fontSize: 18, opacity: 0.92 }}>
+                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
+              </p>
+              <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
+                Attendi che l'host mostri la risposta corretta
+              </p>
+            </div>
+          )}
+
+          {game?.phase === "reveal" && currentQuestion && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              {renderQuestionMedia(currentQuestion, "player")}
+              <h2 style={{ color: GREEN }}>✅ Risposta corretta: {currentQuestion.correct_answer}</h2>
+              <p style={{ fontSize: 18 }}>{currentQuestion.explanation}</p>
+            </div>
+          )}
+
+          {game?.phase === "final" && (
+            <div style={{ ...panelStyle, textAlign: "center" }}>
+              <h2>🏁 Quiz terminato</h2>
+              <p>Guarda il podio finale.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
 /* =====================================================
    PARTE 10 - RENDER SCHERMATA TV
 ===================================================== */
@@ -2636,20 +2924,91 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: 40,
+                padding: "24px 28px",
                 textAlign: "center",
                 height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
+                display: "grid",
+                gridTemplateRows: "auto auto 1fr",
+                gap: 16,
                 overflow: "hidden",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv")}
-              <div style={{ fontSize: 38, marginBottom: 16, opacity: 0.9 }}>
+              {(currentQuestion.image_url || currentQuestion.audio_url) && (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 1000,
+                    margin: "0 auto",
+                    display: "grid",
+                    gap: 12,
+                    alignContent: "start",
+                    justifyItems: "center",
+                  }}
+                >
+                  {currentQuestion.image_url && (
+                    <div
+                      style={{
+                        width: "100%",
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        background: "rgba(255,255,255,0.06)",
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+                      }}
+                    >
+                      <img
+                        src={currentQuestion.image_url}
+                        alt="Immagine domanda"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          maxHeight: "22vh",
+                          objectFit: "contain",
+                          background: "rgba(0,0,0,0.18)",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {currentQuestion.audio_url && (
+                    <div
+                      style={{
+                        width: "fit-content",
+                        maxWidth: "100%",
+                        padding: "10px 18px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.07)",
+                        fontSize: "clamp(16px, 1.4vw, 24px)",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      🔊 Audio domanda in riproduzione
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div
+                style={{
+                  fontSize: "clamp(28px, 2.4vw, 38px)",
+                  opacity: 0.9,
+                  alignSelf: "center",
+                }}
+              >
                 Prossima domanda tra...
               </div>
-              <div style={{ fontSize: 96, fontWeight: "bold", color: GOLD }}>
+
+              <div
+                style={{
+                  fontSize: "clamp(72px, 9vw, 120px)",
+                  fontWeight: "bold",
+                  color: GOLD,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 {countdownTimeLeft}
               </div>
             </div>
@@ -2659,21 +3018,20 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "24px 28px",
+                padding: "20px 24px",
                 position: "relative",
                 height: "100%",
                 overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-start",
+                display: "grid",
+                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+                gap: 12,
               }}
             >
               <div
                 style={{
-                  fontSize: "clamp(42px, 5vw, 70px)",
+                  fontSize: "clamp(32px, 4vw, 58px)",
                   fontWeight: "bold",
                   color: localTimeLeft <= 5 ? GOLD : "white",
-                  marginBottom: 16,
                   textAlign: "center",
                   lineHeight: 1,
                   flexShrink: 0,
@@ -2684,15 +3042,75 @@ export default function App() {
                 ⏳ {localTimeLeft}
               </div>
 
-              {renderQuestionMedia(currentQuestion, "tv")}
+              {(currentQuestion.image_url || currentQuestion.audio_url) && (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 1000,
+                    margin: "0 auto",
+                    display: "grid",
+                    gap: 10,
+                    alignContent: "start",
+                    justifyItems: "center",
+                    minHeight: 0,
+                  }}
+                >
+                  {currentQuestion.image_url && (
+                    <div
+                      style={{
+                        width: "100%",
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        background: "rgba(255,255,255,0.06)",
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+                      }}
+                    >
+                      <img
+                        src={currentQuestion.image_url}
+                        alt="Immagine domanda"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          maxHeight:
+                            currentQuestion.option_c || currentQuestion.option_d ? "20vh" : "24vh",
+                          objectFit: "contain",
+                          background: "rgba(0,0,0,0.18)",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {currentQuestion.audio_url && (
+                    <div
+                      style={{
+                        width: "fit-content",
+                        maxWidth: "100%",
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.07)",
+                        fontSize: "clamp(15px, 1.25vw, 22px)",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      🔊 Audio domanda in riproduzione
+                    </div>
+                  )}
+                </div>
+              )}
 
               <h2
                 style={{
-                  fontSize: "clamp(24px, 2.8vw, 42px)",
-                  lineHeight: 1.2,
-                  margin: "0 0 20px 0",
+                  fontSize: "clamp(22px, 2.4vw, 36px)",
+                  lineHeight: 1.15,
+                  margin: 0,
                   textAlign: "center",
-                  flexShrink: 0,
+                  minHeight: 0,
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
                 }}
               >
                 {currentQuestion.question}
@@ -2702,22 +3120,28 @@ export default function App() {
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
-                  gap: 14,
+                  gridAutoRows: "minmax(0, 1fr)",
+                  gap: 12,
                   width: "100%",
-                  maxWidth: 1100,
+                  maxWidth: 1120,
                   margin: "0 auto",
-                  flex: 1,
-                  alignContent: "center",
+                  minHeight: 0,
+                  alignItems: "stretch",
                 }}
               >
                 <div
                   style={{
                     ...getTvOptionStyle("A"),
-                    fontSize: "clamp(20px, 2vw, 30px)",
-                    padding: "18px 20px",
-                    minHeight: 90,
+                    fontSize: "clamp(18px, 1.7vw, 26px)",
+                    padding: "14px 16px",
+                    minHeight: 0,
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    lineHeight: 1.12,
+                    overflow: "hidden",
+                    wordBreak: "break-word",
                     animation: "answerFlashPop 0.25s ease",
                   }}
                 >
@@ -2727,11 +3151,16 @@ export default function App() {
                 <div
                   style={{
                     ...getTvOptionStyle("B"),
-                    fontSize: "clamp(20px, 2vw, 30px)",
-                    padding: "18px 20px",
-                    minHeight: 90,
+                    fontSize: "clamp(18px, 1.7vw, 26px)",
+                    padding: "14px 16px",
+                    minHeight: 0,
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    lineHeight: 1.12,
+                    overflow: "hidden",
+                    wordBreak: "break-word",
                     animation: "answerFlashPop 0.25s ease",
                   }}
                 >
@@ -2742,11 +3171,16 @@ export default function App() {
                   <div
                     style={{
                       ...getTvOptionStyle("C"),
-                      fontSize: "clamp(20px, 2vw, 30px)",
-                      padding: "18px 20px",
-                      minHeight: 90,
+                      fontSize: "clamp(18px, 1.7vw, 26px)",
+                      padding: "14px 16px",
+                      minHeight: 0,
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "center",
+                      textAlign: "center",
+                      lineHeight: 1.12,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
                       animation: "answerFlashPop 0.25s ease",
                     }}
                   >
@@ -2758,11 +3192,16 @@ export default function App() {
                   <div
                     style={{
                       ...getTvOptionStyle("D"),
-                      fontSize: "clamp(20px, 2vw, 30px)",
-                      padding: "18px 20px",
-                      minHeight: 90,
+                      fontSize: "clamp(18px, 1.7vw, 26px)",
+                      padding: "14px 16px",
+                      minHeight: 0,
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "center",
+                      textAlign: "center",
+                      lineHeight: 1.12,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
                       animation: "answerFlashPop 0.25s ease",
                     }}
                   >
@@ -2777,23 +3216,76 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "24px 28px",
+                padding: "20px 24px",
                 height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-start",
+                display: "grid",
+                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+                gap: 12,
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.35s ease",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv")}
+              {(currentQuestion.image_url || currentQuestion.audio_url) && (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 1000,
+                    margin: "0 auto",
+                    display: "grid",
+                    gap: 10,
+                    alignContent: "start",
+                    justifyItems: "center",
+                  }}
+                >
+                  {currentQuestion.image_url && (
+                    <div
+                      style={{
+                        width: "100%",
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        background: "rgba(255,255,255,0.06)",
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+                      }}
+                    >
+                      <img
+                        src={currentQuestion.image_url}
+                        alt="Immagine domanda"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          maxHeight: "18vh",
+                          objectFit: "contain",
+                          background: "rgba(0,0,0,0.18)",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {currentQuestion.audio_url && (
+                    <div
+                      style={{
+                        width: "fit-content",
+                        maxWidth: "100%",
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.07)",
+                        fontSize: "clamp(15px, 1.25vw, 22px)",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      🔊 Audio domanda riprodotto
+                    </div>
+                  )}
+                </div>
+              )}
 
               <h2
                 style={{
-                  fontSize: "clamp(28px, 3.6vw, 48px)",
-                  margin: "0 0 10px 0",
-                  flexShrink: 0,
+                  fontSize: "clamp(24px, 3vw, 42px)",
+                  margin: 0,
                 }}
               >
                 📊 Percentuali risposte
@@ -2801,10 +3293,8 @@ export default function App() {
 
               <div
                 style={{
-                  fontSize: "clamp(18px, 2vw, 28px)",
+                  fontSize: "clamp(16px, 1.6vw, 24px)",
                   color: GOLD,
-                  marginBottom: 18,
-                  flexShrink: 0,
                 }}
               >
                 {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
@@ -2814,12 +3304,12 @@ export default function App() {
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
-                  gap: 14,
+                  gap: 12,
                   width: "100%",
-                  maxWidth: 1100,
+                  maxWidth: 1120,
                   margin: "0 auto",
-                  flex: 1,
-                  alignContent: "center",
+                  minHeight: 0,
+                  alignContent: "stretch",
                 }}
               >
                 {renderStatsBar("A", currentQuestion.option_a)}
@@ -2834,70 +3324,185 @@ export default function App() {
             <div
               style={{
                 ...panelStyle,
-                padding: "24px 28px",
+                padding: "20px 24px",
                 height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-start",
+                display: "grid",
+                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+                gap: 12,
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.45s ease",
               }}
             >
-              {renderQuestionMedia(currentQuestion, "tv")}
+              {(currentQuestion.image_url || currentQuestion.audio_url) && (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 1000,
+                    margin: "0 auto",
+                    display: "grid",
+                    gap: 10,
+                    alignContent: "start",
+                    justifyItems: "center",
+                  }}
+                >
+                  {currentQuestion.image_url && (
+                    <div
+                      style={{
+                        width: "100%",
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        background: "rgba(255,255,255,0.06)",
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+                      }}
+                    >
+                      <img
+                        src={currentQuestion.image_url}
+                        alt="Immagine domanda"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          maxHeight: "18vh",
+                          objectFit: "contain",
+                          background: "rgba(0,0,0,0.18)",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {currentQuestion.audio_url && (
+                    <div
+                      style={{
+                        width: "fit-content",
+                        maxWidth: "100%",
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.07)",
+                        fontSize: "clamp(15px, 1.25vw, 22px)",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      🔊 Audio domanda riprodotto
+                    </div>
+                  )}
+                </div>
+              )}
 
               <h2
                 style={{
-                  fontSize: "clamp(32px, 4vw, 54px)",
+                  fontSize: "clamp(26px, 3.2vw, 44px)",
                   color: GREEN,
-                  margin: "0 0 12px 0",
-                  flexShrink: 0,
+                  margin: 0,
                 }}
               >
                 ✅ Risposta corretta: {currentQuestion.correct_answer}
               </h2>
 
-              {currentQuestion.explanation && (
+              {currentQuestion.explanation ? (
                 <p
                   style={{
-                    fontSize: "clamp(18px, 2vw, 28px)",
-                    margin: "0 0 20px 0",
+                    fontSize: "clamp(16px, 1.6vw, 24px)",
+                    margin: 0,
                     opacity: 0.96,
-                    flexShrink: 0,
+                    lineHeight: 1.2,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
                   }}
                 >
                   {currentQuestion.explanation}
                 </p>
+              ) : (
+                <div />
               )}
 
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
-                  gap: 14,
+                  gap: 12,
                   width: "100%",
-                  maxWidth: 1100,
+                  maxWidth: 1120,
                   margin: "0 auto",
-                  flex: 1,
-                  alignContent: "center",
+                  minHeight: 0,
+                  alignContent: "stretch",
                 }}
               >
-                <div style={getTvRevealOptionStyle("A", currentQuestion.correct_answer)}>
+                <div
+                  style={{
+                    ...getTvRevealOptionStyle("A", currentQuestion.correct_answer),
+                    fontSize: "clamp(18px, 1.7vw, 26px)",
+                    padding: "14px 16px",
+                    minHeight: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    lineHeight: 1.12,
+                    overflow: "hidden",
+                    wordBreak: "break-word",
+                  }}
+                >
                   A - {currentQuestion.option_a}
                 </div>
 
-                <div style={getTvRevealOptionStyle("B", currentQuestion.correct_answer)}>
+                <div
+                  style={{
+                    ...getTvRevealOptionStyle("B", currentQuestion.correct_answer),
+                    fontSize: "clamp(18px, 1.7vw, 26px)",
+                    padding: "14px 16px",
+                    minHeight: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    lineHeight: 1.12,
+                    overflow: "hidden",
+                    wordBreak: "break-word",
+                  }}
+                >
                   B - {currentQuestion.option_b}
                 </div>
 
                 {currentQuestion.option_c && (
-                  <div style={getTvRevealOptionStyle("C", currentQuestion.correct_answer)}>
+                  <div
+                    style={{
+                      ...getTvRevealOptionStyle("C", currentQuestion.correct_answer),
+                      fontSize: "clamp(18px, 1.7vw, 26px)",
+                      padding: "14px 16px",
+                      minHeight: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      textAlign: "center",
+                      lineHeight: 1.12,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
+                    }}
+                  >
                     C - {currentQuestion.option_c}
                   </div>
                 )}
 
                 {currentQuestion.option_d && (
-                  <div style={getTvRevealOptionStyle("D", currentQuestion.correct_answer)}>
+                  <div
+                    style={{
+                      ...getTvRevealOptionStyle("D", currentQuestion.correct_answer),
+                      fontSize: "clamp(18px, 1.7vw, 26px)",
+                      padding: "14px 16px",
+                      minHeight: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      textAlign: "center",
+                      lineHeight: 1.12,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
+                    }}
+                  >
                     D - {currentQuestion.option_d}
                   </div>
                 )}
@@ -2966,12 +3571,22 @@ export default function App() {
       </div>
     );
   }
+
 /* =====================================================
    PARTE 11 - RENDER SCHERMATA HOST E CHIUSURA COMPONENTE
 ===================================================== */
 
   return (
-    <div style={{ ...containerStyle, position: "relative" }}>
+    <div
+      style={{
+        ...containerStyle,
+        position: "relative",
+        height: "100vh",
+        overflowY: "auto",
+        overflowX: "hidden",
+        paddingBottom: 24,
+      }}
+    >
       {hostBanner && (
         <div
           style={{
