@@ -31,6 +31,7 @@ const COUNTDOWN_DURATION = 10;
 const QUESTION_START_DELAY_MS = 3000;
 const COUNTDOWN_AUDIO_SRC = "/media/countdown10.m4a";
 const REVEAL_AUDIO_SRC = "";
+const HOST_PASSWORD = "Cromos6339";
 
 const DEMO_QUESTIONS = [
   {
@@ -445,6 +446,10 @@ export default function App() {
   const [joinedPlayer, setJoinedPlayer] = useState(null);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [jollyUsed, setJollyUsed] = useState(false);
+
+  const [hostAuthorized, setHostAuthorized] = useState(false);
+  const [hostPasswordInput, setHostPasswordInput] = useState("");
+  const [hostPasswordError, setHostPasswordError] = useState("");
 
   const [hostBanner] = useState(null);
   const [finalRevealIndex, setFinalRevealIndex] = useState(-1);
@@ -2169,6 +2174,118 @@ export default function App() {
           <button onClick={() => setRole("tv")} style={buttonStyle}>
             TV
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (role === "host" && !hostAuthorized) {
+    return (
+      <div
+        style={{
+          ...containerStyle,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div style={playerBackgroundLogoStyle}>
+          <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
+        </div>
+
+        <div
+          style={{
+            ...panelStyle,
+            width: "100%",
+            maxWidth: 520,
+            textAlign: "center",
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          <h1 style={{ marginBottom: 10 }}>🔐 Accesso Host</h1>
+          <p style={{ opacity: 0.85, marginBottom: 22 }}>
+            Inserisci la password per accedere al pannello host
+          </p>
+
+          <input
+            type="password"
+            placeholder="Password host"
+            value={hostPasswordInput}
+            onChange={(e) => {
+              setHostPasswordInput(e.target.value);
+              if (hostPasswordError) setHostPasswordError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (hostPasswordInput === HOST_PASSWORD) {
+                  setHostAuthorized(true);
+                  setHostPasswordError("");
+                } else {
+                  setHostPasswordError("Password errata");
+                }
+              }
+            }}
+            style={{
+              padding: 14,
+              width: "100%",
+              maxWidth: 320,
+              borderRadius: 12,
+              border: "none",
+              marginBottom: 14,
+              fontSize: 16,
+            }}
+          />
+
+          <div>
+            <button
+              onClick={() => {
+                if (hostPasswordInput === HOST_PASSWORD) {
+                  setHostAuthorized(true);
+                  setHostPasswordError("");
+                } else {
+                  setHostPasswordError("Password errata");
+                }
+              }}
+              style={buttonStyle}
+            >
+              ENTRA COME HOST
+            </button>
+          </div>
+
+          {hostPasswordError && (
+            <div
+              style={{
+                marginTop: 12,
+                color: "#f87171",
+                fontWeight: "bold",
+              }}
+            >
+              {hostPasswordError}
+            </div>
+          )}
+
+          <div style={{ marginTop: 10 }}>
+            <button
+              onClick={() => {
+                setRole(null);
+                setHostPasswordInput("");
+                setHostPasswordError("");
+              }}
+              style={{
+                background: "transparent",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 12,
+                padding: "10px 16px",
+                cursor: "pointer",
+              }}
+            >
+              Torna indietro
+            </button>
+          </div>
         </div>
       </div>
     );
