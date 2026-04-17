@@ -1106,7 +1106,7 @@ export default function App() {
   async function nextQuestion() {
     if (!game) return;
 
-    const nextIndex = game.current_question_index + 1;
+    const nextIndex = Number(game.current_question_index || 0) + 1;
 
     if (nextIndex >= questions.length) {
       try {
@@ -1119,7 +1119,7 @@ export default function App() {
             question_started_at_ms: null,
             question_started_at: null,
             question_duration: null,
-            show_leaderboard: false,
+            show_leaderboard: true,
           })
           .eq("id", game.id)
           .select()
@@ -1130,9 +1130,21 @@ export default function App() {
         await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
 
         setGame(data);
+        setSelectedAnswer(null);
         setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
         phaseSwitchInFlightRef.current = false;
-        await loadEventsOnly(game.id);
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
         setStatus("Quiz finito");
       } catch (error) {
         console.error(error);
@@ -1142,7 +1154,51 @@ export default function App() {
     }
 
     const q = questions.find((item) => item.position === nextIndex);
-    if (!q) return;
+
+    if (!q) {
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: true,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setSelectedAnswer(null);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
+      return;
+    }
 
     try {
       const duration = normalizeQuestionTime(q);
@@ -2382,6 +2438,16 @@ export default function App() {
       );
     }
 
+    const finalRanking = [...(players || [])].sort((a, b) => {
+      const scoreDiff = (b.score || 0) - (a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+    });
+
+    const myFinalIndex = finalRanking.findIndex((p) => p.id === joinedPlayer.id);
+    const myFinalPosition = myFinalIndex >= 0 ? myFinalIndex + 1 : null;
+    const myFinalPlayer = myFinalIndex >= 0 ? finalRanking[myFinalIndex] : joinedPlayer;
+
     return (
       <div style={{ ...containerStyle, position: "relative", overflow: "hidden" }}>
         <div style={playerBackgroundLogoStyle}>
@@ -2574,8 +2640,112 @@ export default function App() {
 
           {game?.phase === "final" && (
             <div style={{ ...panelStyle, textAlign: "center" }}>
-              <h2>🏁 Quiz terminato</h2>
-              <p>Guarda il podio finale.</p>
+              <h2 style={{ marginBottom: 12 }}>🏁 Quiz terminato</h2>
+
+              {myFinalPosition && (
+                <div
+                  style={{
+                    margin: "0 auto 24px",
+                    maxWidth: 420,
+                    padding: 18,
+                    borderRadius: 18,
+                    background: "rgba(255,215,64,0.14)",
+                    border: "1px solid rgba(255,215,64,0.45)",
+                  }}
+                >
+                  <div style={{ fontSize: 18, opacity: 0.9, marginBottom: 6 }}>La tua posizione</div>
+                  <div style={{ fontSize: 42, fontWeight: "bold", color: GOLD, lineHeight: 1 }}>
+                    #{myFinalPosition}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 18 }}>
+                    {myFinalPlayer?.name} • {myFinalPlayer?.score || 0} punti
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginTop: 10,
+                  textAlign: "left",
+                  maxWidth: 560,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                }}
+              >
+                <h3 style={{ textAlign: "center", marginBottom: 16 }}>Classifica finale</h3>
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  {finalRanking.map((player, index) => {
+                    const isMe = player.id === joinedPlayer.id;
+                    const position = index + 1;
+
+                    return (
+                      <div
+                        key={player.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "14px 16px",
+                          borderRadius: 14,
+                          background: isMe
+                            ? "rgba(255,215,64,0.16)"
+                            : "rgba(255,255,255,0.08)",
+                          border: isMe
+                            ? "1px solid rgba(255,215,64,0.45)"
+                            : "1px solid rgba(255,255,255,0.12)",
+                          fontWeight: isMe ? "bold" : "normal",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                        >
+                          <div
+                            style={{
+                              minWidth: 44,
+                              textAlign: "center",
+                              fontSize: 20,
+                              fontWeight: "bold",
+                              color:
+                                position === 1
+                                  ? GOLD
+                                  : position === 2
+                                  ? "#d1d5db"
+                                  : position === 3
+                                  ? "#cd7f32"
+                                  : "white",
+                            }}
+                          >
+                            {position === 1 ? "🥇" : position === 2 ? "🥈" : position === 3 ? "🥉" : `#${position}`}
+                          </div>
+
+                          <div
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontSize: 18,
+                            }}
+                          >
+                            {player.name} {isMe ? "(Tu)" : ""}
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: 18, fontWeight: "bold", color: isMe ? GOLD : "white" }}>
+                          {player.score || 0} pt
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
