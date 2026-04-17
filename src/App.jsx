@@ -102,11 +102,7 @@ const ANSWER_D = "#22c55e";
 
 const LOGO_BG = "/images/logo.png";
 
-const PLAYER_JOIN_URL =
-  typeof window !== "undefined"
-    ? `${window.location.origin}${window.location.pathname}?role=player`
-    : "";
-
+const PLAYER_JOIN_URL = "https://quizzone-live-three.vercel.app/?role=player";
 const tvLogoStyle = {
   position: "absolute",
   top: 16,
@@ -2448,8 +2444,110 @@ export default function App() {
     const myFinalPosition = myFinalIndex >= 0 ? myFinalIndex + 1 : null;
     const myFinalPlayer = myFinalIndex >= 0 ? finalRanking[myFinalIndex] : joinedPlayer;
 
+    const questionText = currentQuestion?.question || "";
+    const optionAText = currentQuestion?.option_a || "";
+    const optionBText = currentQuestion?.option_b || "";
+    const optionCText = currentQuestion?.option_c || "";
+    const optionDText = currentQuestion?.option_d || "";
+    const longestAnswerLength = Math.max(
+      optionAText.length,
+      optionBText.length,
+      optionCText.length,
+      optionDText.length
+    );
+
+    const isVeryLongQuestion = questionText.length > 140;
+    const isLongQuestion = questionText.length > 100;
+    const hasVeryLongAnswers = longestAnswerLength > 34;
+    const hasLongAnswers = longestAnswerLength > 24;
+
+    const compactQuestionLayout = isVeryLongQuestion || hasVeryLongAnswers;
+    const mediumQuestionLayout =
+      !compactQuestionLayout && (isLongQuestion || hasLongAnswers);
+
+    const playerTopPanelPadding =
+      effectivePhase === "question"
+        ? compactQuestionLayout
+          ? "8px 10px"
+          : mediumQuestionLayout
+          ? "9px 11px"
+          : "10px 12px"
+        : undefined;
+
+    const playerTopPanelMarginBottom =
+      effectivePhase === "question"
+        ? compactQuestionLayout
+          ? 6
+          : 8
+        : 20;
+
+    const playerNameFontSize =
+      effectivePhase === "question"
+        ? compactQuestionLayout
+          ? "clamp(16px, 4.2vw, 20px)"
+          : "clamp(18px, 5vw, 22px)"
+        : undefined;
+
+    const playerTopTextFontSize =
+      effectivePhase === "question"
+        ? compactQuestionLayout
+          ? "clamp(12px, 3.2vw, 14px)"
+          : "clamp(13px, 3.4vw, 15px)"
+        : undefined;
+
+    const playerJollyFontSize = compactQuestionLayout
+      ? "clamp(11px, 3vw, 13px)"
+      : "clamp(12px, 3.4vw, 14px)";
+
+    const playerQuestionCardPadding = compactQuestionLayout
+      ? "10px 10px"
+      : mediumQuestionLayout
+      ? "12px 12px"
+      : "14px 14px";
+
+    const playerTimerFontSize = compactQuestionLayout
+      ? "clamp(20px, 5vw, 28px)"
+      : mediumQuestionLayout
+      ? "clamp(22px, 5.5vw, 30px)"
+      : "clamp(24px, 6vw, 32px)";
+
+    const playerQuestionFontSize = compactQuestionLayout
+      ? "clamp(15px, 3.6vw, 19px)"
+      : mediumQuestionLayout
+      ? "clamp(17px, 4vw, 21px)"
+      : "clamp(19px, 4.6vw, 25px)";
+
+    const playerAnswerFontSize = compactQuestionLayout
+      ? "clamp(12px, 3.2vw, 15px)"
+      : mediumQuestionLayout
+      ? "clamp(13px, 3.4vw, 16px)"
+      : "clamp(14px, 3.8vw, 17px)";
+
+    const playerAnswerMinHeight = compactQuestionLayout
+      ? 44
+      : mediumQuestionLayout
+      ? 48
+      : 52;
+
+    const playerAnswerPadding = compactQuestionLayout ? "8px 10px" : "10px 12px";
+    const playerAnswersGap = compactQuestionLayout ? 6 : 8;
+    const playerQuestionMarginBottom = compactQuestionLayout ? 8 : 10;
+    const playerTimerMarginBottom = compactQuestionLayout ? 6 : 8;
+    const playerMediaMarginBottom = compactQuestionLayout ? 6 : 8;
+    const playerStatusMarginTop = compactQuestionLayout ? 8 : 10;
+
     return (
-      <div style={{ ...containerStyle, position: "relative", overflow: "hidden" }}>
+      <div
+        style={{
+          ...containerStyle,
+          position: "relative",
+          minHeight: "100dvh",
+          overflowY: "auto",
+          overflowX: "hidden",
+          WebkitOverflowScrolling: "touch",
+          paddingBottom: "max(24px, env(safe-area-inset-bottom))",
+        }}
+      >
         <div style={playerBackgroundLogoStyle}>
           <img src={LOGO_BG} alt="Logo quiz" style={playerBackgroundLogoImageStyle} />
         </div>
@@ -2487,13 +2585,39 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ maxWidth: 760, margin: "0 auto", position: "relative", zIndex: 1 }}>
-          <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
-            <h1 style={{ marginBottom: 8 }}>🎮 {joinedPlayer.name}</h1>
-            <p>
+        <div
+          style={{
+            maxWidth: 760,
+            margin: "0 auto",
+            position: "relative",
+            zIndex: 1,
+            width: "100%",
+            boxSizing: "border-box",
+            padding: "10px 10px 22px",
+          }}
+        >
+          <div
+            style={{
+              ...panelStyle,
+              textAlign: "center",
+              marginBottom: playerTopPanelMarginBottom,
+              padding: playerTopPanelPadding,
+            }}
+          >
+            <h1
+              style={{
+                marginBottom: effectivePhase === "question" ? 4 : 8,
+                fontSize: playerNameFontSize,
+              }}
+            >
+              🎮 {joinedPlayer.name}
+            </h1>
+
+            <p style={{ margin: "2px 0", fontSize: playerTopTextFontSize }}>
               <b>Punti:</b> {joinedPlayer.score || 0}
             </p>
-            <p>
+
+            <p style={{ margin: "2px 0", fontSize: playerTopTextFontSize }}>
               <b>Stato:</b> {status}
             </p>
 
@@ -2502,6 +2626,9 @@ export default function App() {
                 onClick={useJollyCard}
                 style={{
                   ...buttonStyle,
+                  marginTop: 6,
+                  padding: compactQuestionLayout ? "7px 10px" : "8px 12px",
+                  fontSize: playerJollyFontSize,
                   background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
                 }}
               >
@@ -2509,7 +2636,18 @@ export default function App() {
               </button>
             )}
 
-            {jollyUsed && <p style={{ color: GOLD, fontWeight: "bold" }}>JOLLY già usato</p>}
+            {jollyUsed && (
+              <p
+                style={{
+                  color: GOLD,
+                  fontWeight: "bold",
+                  marginTop: 6,
+                  fontSize: playerTopTextFontSize,
+                }}
+              >
+                JOLLY già usato
+              </p>
+            )}
           </div>
 
           {game?.phase === "lobby" && (
@@ -2531,33 +2669,76 @@ export default function App() {
           )}
 
           {effectivePhase === "question" && currentQuestion && (
-            <div style={{ ...panelStyle, textAlign: "center" }}>
+            <div
+              style={{
+                ...panelStyle,
+                textAlign: "center",
+                padding: playerQuestionCardPadding,
+              }}
+            >
               <div
                 style={{
-                  fontSize: 42,
+                  fontSize: playerTimerFontSize,
                   fontWeight: "bold",
-                  marginBottom: 16,
+                  marginBottom: playerTimerMarginBottom,
                   color: localTimeLeft <= 5 ? GOLD : "white",
                   animation:
                     localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
+                  lineHeight: 1,
                 }}
               >
                 ⏳ {localTimeLeft}s
               </div>
 
-              {renderQuestionMedia(currentQuestion, "player")}
+              <div style={{ marginBottom: playerMediaMarginBottom }}>
+                {renderQuestionMedia(currentQuestion, "player")}
+              </div>
 
-              <h2 style={{ fontSize: 30, lineHeight: 1.25 }}>{currentQuestion.question}</h2>
+              <h2
+                style={{
+                  fontSize: playerQuestionFontSize,
+                  lineHeight: compactQuestionLayout ? 1.08 : 1.14,
+                  margin: `0 0 ${playerQuestionMarginBottom}px`,
+                  wordBreak: "break-word",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {currentQuestion.question}
+              </h2>
 
-              <div style={{ display: "grid", gap: 12, maxWidth: 520, margin: "24px auto 0" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gap: playerAnswersGap,
+                  maxWidth: 520,
+                  margin: "0 auto",
+                  width: "100%",
+                }}
+              >
                 <button
                   onClick={() => submitAnswer("A")}
                   disabled={!!selectedAnswer || localTimeLeft <= 0}
-                  style={getPlayerAnswerButtonStyle(
-                    "A",
-                    !!selectedAnswer || localTimeLeft <= 0,
-                    selectedAnswer === "A"
-                  )}
+                  style={{
+                    ...getPlayerAnswerButtonStyle(
+                      "A",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "A"
+                    ),
+                    width: "100%",
+                    minHeight: playerAnswerMinHeight,
+                    height: "auto",
+                    padding: playerAnswerPadding,
+                    fontSize: playerAnswerFontSize,
+                    lineHeight: 1.12,
+                    whiteSpace: "normal",
+                    wordBreak: "break-word",
+                    overflowWrap: "anywhere",
+                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-start",
+                    boxSizing: "border-box",
+                  }}
                 >
                   A - {currentQuestion.option_a}
                 </button>
@@ -2565,11 +2746,27 @@ export default function App() {
                 <button
                   onClick={() => submitAnswer("B")}
                   disabled={!!selectedAnswer || localTimeLeft <= 0}
-                  style={getPlayerAnswerButtonStyle(
-                    "B",
-                    !!selectedAnswer || localTimeLeft <= 0,
-                    selectedAnswer === "B"
-                  )}
+                  style={{
+                    ...getPlayerAnswerButtonStyle(
+                      "B",
+                      !!selectedAnswer || localTimeLeft <= 0,
+                      selectedAnswer === "B"
+                    ),
+                    width: "100%",
+                    minHeight: playerAnswerMinHeight,
+                    height: "auto",
+                    padding: playerAnswerPadding,
+                    fontSize: playerAnswerFontSize,
+                    lineHeight: 1.12,
+                    whiteSpace: "normal",
+                    wordBreak: "break-word",
+                    overflowWrap: "anywhere",
+                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-start",
+                    boxSizing: "border-box",
+                  }}
                 >
                   B - {currentQuestion.option_b}
                 </button>
@@ -2578,11 +2775,27 @@ export default function App() {
                   <button
                     onClick={() => submitAnswer("C")}
                     disabled={!!selectedAnswer || localTimeLeft <= 0}
-                    style={getPlayerAnswerButtonStyle(
-                      "C",
-                      !!selectedAnswer || localTimeLeft <= 0,
-                      selectedAnswer === "C"
-                    )}
+                    style={{
+                      ...getPlayerAnswerButtonStyle(
+                        "C",
+                        !!selectedAnswer || localTimeLeft <= 0,
+                        selectedAnswer === "C"
+                      ),
+                      width: "100%",
+                      minHeight: playerAnswerMinHeight,
+                      height: "auto",
+                      padding: playerAnswerPadding,
+                      fontSize: playerAnswerFontSize,
+                      lineHeight: 1.12,
+                      whiteSpace: "normal",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
+                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-start",
+                      boxSizing: "border-box",
+                    }}
                   >
                     C - {currentQuestion.option_c}
                   </button>
@@ -2592,11 +2805,27 @@ export default function App() {
                   <button
                     onClick={() => submitAnswer("D")}
                     disabled={!!selectedAnswer || localTimeLeft <= 0}
-                    style={getPlayerAnswerButtonStyle(
-                      "D",
-                      !!selectedAnswer || localTimeLeft <= 0,
-                      selectedAnswer === "D"
-                    )}
+                    style={{
+                      ...getPlayerAnswerButtonStyle(
+                        "D",
+                        !!selectedAnswer || localTimeLeft <= 0,
+                        selectedAnswer === "D"
+                      ),
+                      width: "100%",
+                      minHeight: playerAnswerMinHeight,
+                      height: "auto",
+                      padding: playerAnswerPadding,
+                      fontSize: playerAnswerFontSize,
+                      lineHeight: 1.12,
+                      whiteSpace: "normal",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
+                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-start",
+                      boxSizing: "border-box",
+                    }}
                   >
                     D - {currentQuestion.option_d}
                   </button>
@@ -2604,13 +2833,13 @@ export default function App() {
               </div>
 
               {selectedAnswer && (
-                <p style={{ marginTop: 18, color: GOLD, fontWeight: "bold" }}>
+                <p style={{ marginTop: playerStatusMarginTop, color: GOLD, fontWeight: "bold" }}>
                   Hai risposto: {selectedAnswer}
                 </p>
               )}
 
               {!selectedAnswer && localTimeLeft <= 0 && (
-                <p style={{ marginTop: 18, color: RED, fontWeight: "bold" }}>
+                <p style={{ marginTop: playerStatusMarginTop, color: RED, fontWeight: "bold" }}>
                   Tempo scaduto
                 </p>
               )}
