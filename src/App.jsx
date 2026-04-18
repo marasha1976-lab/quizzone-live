@@ -1000,7 +1000,14 @@ export default function App() {
         });
       });
 
-      await loadEventsOnly(freshGame.id);
+await Promise.all([
+  loadGameOnly(),
+  loadQuestionsOnly(freshGame.id),
+  loadPlayersOnly(freshGame.id),
+  loadAnswersOnly(freshGame.id),
+  loadEventsOnly(freshGame.id),
+]);
+      
     } catch (error) {
       console.error(error);
       setStatus("Errore inserimento: " + error.message);
@@ -1524,6 +1531,20 @@ export default function App() {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 12);
 
+    const refreshAllGameData = async () => {
+      try {
+        await Promise.all([
+          loadGameOnly(),
+          loadQuestionsOnly(game.id),
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
     const channel = supabase
       .channel(`quiz-live-${game.id}`)
       .on(
@@ -1623,8 +1644,7 @@ export default function App() {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          loadPlayersOnly(game.id).catch(() => {});
-          loadEventsOnly(game.id).catch(() => {});
+          refreshAllGameData();
         }
       });
 
@@ -1647,9 +1667,12 @@ export default function App() {
     if (!game?.id) return;
 
     fallbackRefreshRef.current = setInterval(() => {
+      loadGameOnly().catch(() => {});
+      loadQuestionsOnly(game.id).catch(() => {});
       loadPlayersOnly(game.id).catch(() => {});
+      loadAnswersOnly(game.id).catch(() => {});
       loadEventsOnly(game.id).catch(() => {});
-    }, 5000);
+    }, 3000);
 
     return () => {
       if (fallbackRefreshRef.current) {
@@ -1660,12 +1683,48 @@ export default function App() {
   }, [game?.id]);
 
   useEffect(() => {
+    if (!game?.id) return;
+
+    const refreshVisiblePage = () => {
+      loadGameOnly().catch(() => {});
+      loadQuestionsOnly(game.id).catch(() => {});
+      loadPlayersOnly(game.id).catch(() => {});
+      loadAnswersOnly(game.id).catch(() => {});
+      loadEventsOnly(game.id).catch(() => {});
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshVisiblePage();
+      }
+    };
+
+    const handleFocus = () => {
+      refreshVisiblePage();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [game?.id]);
+
+  useEffect(() => {
     if (effectivePhase === "countdown" || effectivePhase === "question") {
       setSelectedAnswer(null);
       setAnswerFeedback(null);
       submitLockRef.current = false;
+
+      if (game?.id) {
+        loadGameOnly().catch(() => {});
+        loadQuestionsOnly(game.id).catch(() => {});
+        loadAnswersOnly(game.id).catch(() => {});
+      }
     }
-  }, [game?.current_question_index, effectivePhase]);
+  }, [game?.id, game?.current_question_index, effectivePhase]);
 
   useEffect(() => {
     if (!answerFeedback) return;
