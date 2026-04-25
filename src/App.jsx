@@ -3133,6 +3133,30 @@ export default function App() {
 
         <img src={LOGO_BG} alt="Logo quiz" style={tvLogoStyle} />
 
+        {game?.phase !== "final" && questions.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              top: 104,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 30,
+              padding: "8px 18px",
+              borderRadius: 999,
+              background: "rgba(0,0,0,0.45)",
+              border: "1px solid rgba(255,255,255,0.22)",
+              color: GOLD,
+              fontSize: "clamp(18px, 1.6vw, 28px)",
+              fontWeight: "bold",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+              backdropFilter: "blur(6px)",
+              pointerEvents: "none",
+            }}
+          >
+            🎯 Domanda {Number(game?.current_question_index || 0) + 1} / {questions.length}
+          </div>
+        )}
+
         {!hideTvAudioOverlay && (
           <div
             style={{
@@ -4248,6 +4272,13 @@ export default function App() {
         <p style={{ textAlign: "center" }}>
           <b>Stato:</b> {status}
         </p>
+
+        <p style={{ textAlign: "center", fontSize: 22, color: GOLD, fontWeight: "bold" }}>
+          🎯 Domanda{" "}
+          {questions.length > 0 ? Number(game?.current_question_index || 0) + 1 : 0} di{" "}
+          {questions.length}
+        </p>
+
         <p style={{ textAlign: "center" }}>
           <b>Fase DB:</b> {game?.phase || "-"}
         </p>
@@ -4311,7 +4342,10 @@ export default function App() {
 
         {currentQuestion && (
           <div style={{ ...panelStyle, marginBottom: 24 }}>
-            <h2>Domanda corrente</h2>
+            <h2>
+              Domanda corrente — {Number(game?.current_question_index || 0) + 1} /{" "}
+              {questions.length}
+            </h2>
 
             {renderQuestionMedia(currentQuestion, "host")}
 
