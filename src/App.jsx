@@ -1243,52 +1243,66 @@ export default function App() {
     }
   }
 
-  async function saveRoundResults() {
-    if (!game) return;
-
-    try {
-      if (!players.length) {
-        setStatus("Nessun giocatore da salvare");
-        return;
-      }
-
-      const nameToSave =
-        roundName.trim() ||
-        `Round ${new Date().toLocaleString("it-IT", {
-          day: "2-digit",
-          month: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}`;
-
-      const ranking = [...players].sort((a, b) => {
-        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
-        if (scoreDiff !== 0) return scoreDiff;
-        return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
-      });
-
-      const rowsToInsert = ranking.map((player, index) => ({
-        game_id: game.id,
-        round_name: nameToSave,
-        player_name: player.name,
-        score: Number(player.score || 0),
-        position: index + 1,
-      }));
-
-      const { error } = await supabase.from("round_results").insert(rowsToInsert);
-      if (error) throw error;
-
-      await addLiveEvent(game.id, "round_saved", `💾 Classifica salvata: ${nameToSave}`);
-
-      setStatus(`Classifica salvata: ${nameToSave}`);
-    } catch (error) {
-      console.error(error);
-      setStatus("Errore salvataggio classifica: " + error.message);
+  function downloadLeaderboardCsv() {
+    if (!players.length) {
+      setStatus("Nessun giocatore da esportare");
+      return;
     }
+
+    const ranking = [...players].sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+    });
+
+    const rows = [
+      ["Posizione", "Nome", "Punteggio"],
+      ...ranking.map((player, index) => [
+        index + 1,
+        player.name || "",
+        Number(player.score || 0),
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(";")
+      )
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const time = now.toTimeString().slice(0, 5).replace(":", "-");
+
+    link.href = url;
+    link.download = `classifica_${GAME_CODE}_${date}_${time}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+
+    setStatus("Classifica scaricata in CSV sul PC");
   }
 
   async function resetAll() {
     if (!game) return;
+
+    const ok = window.confirm(
+      "Hai già scaricato la classifica CSV? Il reset cancellerà giocatori, risposte, domande ed eventi."
+    );
+
+    if (!ok) return;
 
     try {
       await supabase.from("answers").delete().eq("game_id", game.id);
@@ -4270,28 +4284,14 @@ export default function App() {
             {game?.show_leaderboard ? "Nascondi classifica TV" : "Mostra classifica TV"}
           </button>
 
-          <input
-            placeholder="Nome round"
-            value={roundName}
-            onChange={(e) => setRoundName(e.target.value)}
-            style={{
-              padding: "14px 18px",
-              margin: "8px",
-              borderRadius: 14,
-              border: "none",
-              fontSize: 16,
-              minWidth: 220,
-            }}
-          />
-
           <button
-            onClick={saveRoundResults}
+            onClick={downloadLeaderboardCsv}
             style={{
               ...buttonStyle,
               background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
             }}
           >
-            Salva classifica round
+            Scarica classifica CSV
           </button>
 
           <button onClick={resetAll} style={{ ...buttonStyle, background: RED }}>
