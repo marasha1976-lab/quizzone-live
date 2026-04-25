@@ -971,7 +971,13 @@ export default function App() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505") {
+          setStatus("Nome già usato, scegline un altro");
+          return;
+        }
+        throw error;
+      }
 
       await addLiveEvent(
         freshGame.id,
@@ -984,6 +990,16 @@ export default function App() {
       setJollyUsed(false);
       setStatus("Giocatore aggiunto");
       setPlayerName("");
+
+      setPlayers((prev) => {
+        const withoutDup = prev.filter((p) => p.id !== data.id);
+        const next = [...withoutDup, data];
+        return next.sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        });
+      });
 
       await Promise.all([
         loadGameOnly(),
@@ -1003,10 +1019,7 @@ export default function App() {
 
     try {
       await supabase.from("answers").delete().eq("game_id", game.id);
-      await supabase
-        .from("players")
-        .update({ score: 0, jolly_used: false })
-        .eq("game_id", game.id);
+      await supabase.from("players").update({ score: 0, jolly_used: false }).eq("game_id", game.id);
 
       const firstQuestion = questions.find((q) => q.position === 0) || questions[0];
       const firstTime = normalizeQuestionTime(firstQuestion);
@@ -1014,7 +1027,7 @@ export default function App() {
       const countdownStartedAtMs = Math.round(syncedNowRef.current);
       const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
 
-      const { data, error } = await supabase
+      const { data: updatedGame, error } = await supabase
         .from("games")
         .update({
           phase: "countdown",
@@ -1032,11 +1045,27 @@ export default function App() {
 
       if (error) throw error;
 
-      setGame(data);
+      await addLiveEvent(game.id, "quiz_started", "🚀 Il quiz è iniziato!");
+
+      setGame(updatedGame);
+      setSelectedAnswer(null);
+      setJollyUsed(false);
+      setFinalRevealIndex(-1);
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setAnswers([]);
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+
       setStatus("Quiz avviato");
     } catch (error) {
       console.error(error);
-      setStatus("Errore avvio quiz: " + error.message);
+      setStatus("Errore avvio: " + error.message);
     }
   }
 
@@ -1048,11 +1077,12 @@ export default function App() {
         .from("games")
         .update({
           phase: "reveal",
-          time_left: 0,
           countdown_started_at_ms: null,
           question_started_at_ms: null,
           question_started_at: null,
           question_duration: null,
+          time_left: 0,
+          show_leaderboard: false,
         })
         .eq("id", game.id)
         .select()
@@ -1060,7 +1090,15 @@ export default function App() {
 
       if (error) throw error;
 
+      await addLiveEvent(
+        game.id,
+        "answer_revealed",
+        `✅ Risposta corretta: ${currentQuestion?.correct_answer || "-"}`
+      );
+
       setGame(data);
+      phaseSwitchInFlightRef.current = false;
+      await loadEventsOnly(game.id);
       setStatus("Risposta mostrata");
     } catch (error) {
       console.error(error);
@@ -1074,30 +1112,103 @@ export default function App() {
     const nextIndex = Number(game.current_question_index || 0) + 1;
 
     if (nextIndex >= questions.length) {
-      const { data, error } = await supabase
-        .from("games")
-        .update({
-          phase: "final",
-          show_leaderboard: true,
-          time_left: 0,
-        })
-        .eq("id", game.id)
-        .select()
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: true,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
 
-      if (!error) setGame(data);
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setSelectedAnswer(null);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
       return;
     }
 
     const q = questions.find((item) => item.position === nextIndex);
-    if (!q) return;
+
+    if (!q) {
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: true,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setSelectedAnswer(null);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
+      return;
+    }
 
     try {
       const duration = normalizeQuestionTime(q);
       const countdownStartedAtMs = Math.round(syncedNowRef.current);
       const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
 
-      const { data, error } = await supabase
+      const { data: updatedGame, error } = await supabase
         .from("games")
         .update({
           phase: "countdown",
@@ -1115,11 +1226,20 @@ export default function App() {
 
       if (error) throw error;
 
-      setGame(data);
+      await addLiveEvent(game.id, "next_question", `🎯 Nuova domanda: ${nextIndex + 1}`);
+
+      setSelectedAnswer(null);
+      setGame(updatedGame);
       setStatus("Domanda successiva");
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setTvRevealEffect(null);
+      setTvJollyEffect(null);
+      lastTvQuestionAudioKeyRef.current = null;
     } catch (error) {
       console.error(error);
-      setStatus("Errore prossima domanda: " + error.message);
+      setStatus("Errore next question: " + error.message);
     }
   }
 
@@ -1144,9 +1264,7 @@ export default function App() {
       const ranking = [...players].sort((a, b) => {
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
         if (scoreDiff !== 0) return scoreDiff;
-        return (a.name || "").localeCompare(b.name || "", "it", {
-          sensitivity: "base",
-        });
+        return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
       });
 
       const rowsToInsert = ranking.map((player, index) => ({
@@ -1158,8 +1276,9 @@ export default function App() {
       }));
 
       const { error } = await supabase.from("round_results").insert(rowsToInsert);
-
       if (error) throw error;
+
+      await addLiveEvent(game.id, "round_saved", `💾 Classifica salvata: ${nameToSave}`);
 
       setStatus(`Classifica salvata: ${nameToSave}`);
     } catch (error) {
@@ -1204,8 +1323,15 @@ export default function App() {
       setLiveEvents([]);
       setFinalRevealIndex(-1);
       setRoundName("");
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
       setGame(data);
+      setTvAudioReady(false);
+      setHideTvAudioOverlay(false);
+      lastTvQuestionAudioKeyRef.current = null;
 
+      await loadAll({ silent: true });
       setStatus("Partita resettata");
     } catch (error) {
       console.error(error);
@@ -1217,10 +1343,12 @@ export default function App() {
     if (!game) return;
 
     try {
+      const newValue = !Boolean(game.show_leaderboard);
+
       const { data, error } = await supabase
         .from("games")
         .update({
-          show_leaderboard: !game.show_leaderboard,
+          show_leaderboard: newValue,
         })
         .eq("id", game.id)
         .select()
@@ -1229,8 +1357,172 @@ export default function App() {
       if (error) throw error;
 
       setGame(data);
+      setStatus(newValue ? "Classifica mostrata in TV" : "Classifica nascosta in TV");
     } catch (error) {
       console.error(error);
+      setStatus("Errore classifica TV: " + error.message);
+    }
+  }
+
+  async function useJollyCard() {
+    if (!joinedPlayer || !game || !currentQuestion) return;
+    if (jollyLockRef.current) return;
+
+    if (effectivePhase !== "question" || getRemainingMs(game, syncedNowRef.current) <= 0) {
+      setStatus("Il JOLLY si usa durante la domanda");
+      return;
+    }
+
+    if (jollyUsed || joinedPlayer.jolly_used) {
+      setStatus("JOLLY già usato");
+      return;
+    }
+
+    try {
+      jollyLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("id")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setStatus("Hai già risposto a questa domanda");
+        return;
+      }
+
+      const gainedPoints = 100;
+      const currentScore = Number(joinedPlayer.score || 0);
+
+      const { error: insertAnswerError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: currentQuestion.correct_answer,
+          is_correct: true,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertAnswerError) throw insertAnswerError;
+
+      const { data: updatedPlayer, error: updatePlayerError } = await supabase
+        .from("players")
+        .update({
+          score: currentScore + gainedPoints,
+          jolly_used: true,
+        })
+        .eq("id", joinedPlayer.id)
+        .select()
+        .single();
+
+      if (updatePlayerError) throw updatePlayerError;
+
+      await addLiveEvent(
+        game.id,
+        "jolly_used",
+        `🔥 ${joinedPlayer.name} ha usato il JOLLY! +100 punti`,
+        joinedPlayer.name
+      );
+
+      setJoinedPlayer(updatedPlayer);
+      setJollyUsed(true);
+      setSelectedAnswer(currentQuestion.correct_answer);
+      setAnswerFeedback({ type: "correct", points: gainedPoints });
+      setStatus("💥 JOLLY USATO: risposta corretta automatica! +100 punti");
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore JOLLY: " + error.message);
+    } finally {
+      jollyLockRef.current = false;
+    }
+  }
+
+  async function submitAnswer(letter) {
+    if (!joinedPlayer || !currentQuestion || !game) return;
+    if (submitLockRef.current) return;
+    if (effectivePhase !== "question") return;
+    if (selectedAnswer) return;
+    if (getRemainingMs(game, syncedNowRef.current) <= 0) return;
+
+    try {
+      submitLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("*")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setSelectedAnswer(already.answer);
+        setStatus("Hai già risposto");
+        return;
+      }
+
+      const isCorrect = letter === currentQuestion.correct_answer;
+      let gainedPoints = 0;
+
+      if (isCorrect) {
+        const totalTime = COUNTDOWN_DURATION;
+        const remainingSecondsExact = Math.max(0, getRemainingMs(game, syncedNowRef.current) / 1000);
+        const basePoints = 100;
+        const speedRatio = totalTime > 0 ? remainingSecondsExact / totalTime : 0;
+        const speedBonus = Math.round(speedRatio * 100);
+        gainedPoints = basePoints + speedBonus;
+      }
+
+      const { error: insertError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: letter,
+          is_correct: isCorrect,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      if (isCorrect) {
+        const currentScore = Number(joinedPlayer.score || 0);
+
+        const { data: updatedPlayer, error: updateError } = await supabase
+          .from("players")
+          .update({ score: currentScore + gainedPoints })
+          .eq("id", joinedPlayer.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        setJoinedPlayer(updatedPlayer);
+      }
+
+      setSelectedAnswer(letter);
+      setAnswerFeedback({ type: isCorrect ? "correct" : "wrong", points: gainedPoints });
+      setStatus(isCorrect ? `Corretto! +${gainedPoints} punti` : "Risposta inviata");
+
+      await Promise.all([loadPlayersOnly(game.id), loadAnswersOnly(game.id)]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore risposta: " + error.message);
+    } finally {
+      submitLockRef.current = false;
     }
   }
 
@@ -3938,6 +4230,7 @@ export default function App() {
 
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", fontSize: 42 }}>🎤 HOST</h1>
+
         <p style={{ textAlign: "center" }}>
           <b>Stato:</b> {status}
         </p>
@@ -3953,24 +4246,54 @@ export default function App() {
         <p style={{ textAlign: "center" }}>
           <b>Codice:</b> {GAME_CODE}
         </p>
+
         {isLoading && <p style={{ textAlign: "center", opacity: 0.8 }}>Caricamento...</p>}
 
         <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
           <button onClick={() => loadAll()} style={buttonStyle}>
             Aggiorna
           </button>
+
           <button onClick={startQuiz} style={buttonStyle}>
             Avvia quiz
           </button>
+
           <button onClick={revealAnswer} style={buttonStyle}>
             Mostra risposta
           </button>
+
           <button onClick={nextQuestion} style={buttonStyle}>
             Prossima domanda
           </button>
+
           <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>
             {game?.show_leaderboard ? "Nascondi classifica TV" : "Mostra classifica TV"}
           </button>
+
+          <input
+            placeholder="Nome round"
+            value={roundName}
+            onChange={(e) => setRoundName(e.target.value)}
+            style={{
+              padding: "14px 18px",
+              margin: "8px",
+              borderRadius: 14,
+              border: "none",
+              fontSize: 16,
+              minWidth: 220,
+            }}
+          />
+
+          <button
+            onClick={saveRoundResults}
+            style={{
+              ...buttonStyle,
+              background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+            }}
+          >
+            Salva classifica round
+          </button>
+
           <button onClick={resetAll} style={{ ...buttonStyle, background: RED }}>
             Reset
           </button>
@@ -4003,6 +4326,7 @@ export default function App() {
                 <b>Image URL:</b> {currentQuestion.image_url}
               </p>
             )}
+
             {currentQuestion.audio_url && (
               <p style={{ opacity: 0.88 }}>
                 <b>Audio presente:</b> sì
@@ -4014,6 +4338,7 @@ export default function App() {
                 <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 6 }}>
                   Risposte ricevute: {answerStats.totalAnswered} / {answerStats.totalPlayers}
                 </div>
+
                 <div style={{ fontSize: 16, opacity: 0.92 }}>
                   A {answerStats.A.percent}% · B {answerStats.B.percent}%
                   {currentQuestion.option_c ? ` · C ${answerStats.C.percent}%` : ""}
@@ -4027,6 +4352,7 @@ export default function App() {
         <div style={{ display: "grid", gap: 20, gridTemplateColumns: "1fr 1fr" }}>
           <div style={panelStyle}>
             <h2>Classifica</h2>
+
             {players.length === 0 ? (
               <p>Nessun giocatore ancora.</p>
             ) : (
@@ -4040,6 +4366,7 @@ export default function App() {
 
           <div style={panelStyle}>
             <h2>Eventi live</h2>
+
             {liveEvents.length === 0 ? (
               <p>Nessun evento.</p>
             ) : (
