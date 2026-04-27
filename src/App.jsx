@@ -918,6 +918,631 @@ export default function App() {
     });
   }
 
+/* =====================================================
+   PARTE 6 - AZIONI PRINCIPALI DEL QUIZ
+===================================================== */
+
+  async function joinGame() {
+    if (!playerName.trim()) {
+      setStatus("Scrivi un nome squadra");
+      return;
+    }
+
+    try {
+      const { data: freshGame, error: freshGameError } = await supabase
+        .from("games")
+        .select("id, phase")
+        .eq("code", GAME_CODE)
+        .single();
+
+      if (freshGameError) throw freshGameError;
+
+      if (freshGame.phase !== "lobby") {
+        setStatus("Partita in corso, attendi una nuova partita");
+        return;
+      }
+
+      const trimmedName = playerName.trim().replace(/\s+/g, " ");
+
+      const { data: existing, error: existingError } = await supabase
+        .from("players")
+        .select("*")
+        .eq("game_id", freshGame.id)
+        .ilike("name", trimmedName)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+
+      if (existing) {
+        setStatus("Nome squadra già presente, scegline un altro");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("players")
+        .insert([
+          {
+            game_id: freshGame.id,
+            name: trimmedName,
+            score: 0,
+            jolly_used: false,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === "23505") {
+          setStatus("Nome già usato, scegline un altro");
+          return;
+        }
+        throw error;
+      }
+
+      await addLiveEvent(
+        freshGame.id,
+        "player_joined",
+        `🎉 ${trimmedName} è entrato nel quiz!`,
+        trimmedName
+      );
+
+      setJoinedPlayer(data);
+      setJollyUsed(false);
+      setStatus("Giocatore aggiunto");
+      setPlayerName("");
+
+      setPlayers((prev) => {
+        const withoutDup = prev.filter((p) => p.id !== data.id);
+        const next = [...withoutDup, data];
+        return next.sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        });
+      });
+
+      await Promise.all([
+        loadGameOnly(),
+        loadQuestionsOnly(freshGame.id),
+        loadPlayersOnly(freshGame.id),
+        loadAnswersOnly(freshGame.id),
+        loadEventsOnly(freshGame.id),
+      ]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore inserimento: " + error.message);
+    }
+  }
+
+  async function startQuiz() {
+    if (!game || !questions.length) return;
+
+    try {
+      await supabase.from("answers").delete().eq("game_id", game.id);
+      await supabase.from("players").update({ score: 0, jolly_used: false }).eq("game_id", game.id);
+
+      const firstQuestion = questions.find((q) => q.position === 0) || questions[0];
+      const firstTime = normalizeQuestionTime(firstQuestion);
+
+      const countdownStartedAtMs = Math.round(syncedNowRef.current);
+      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+
+      const { data: updatedGame, error } = await supabase
+        .from("games")
+        .update({
+          phase: "countdown",
+          current_question_index: 0,
+          time_left: firstTime,
+          countdown_started_at_ms: countdownStartedAtMs,
+          question_started_at_ms: questionStartedAtMs,
+          question_started_at: new Date(questionStartedAtMs).toISOString(),
+          question_duration: firstTime,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(game.id, "quiz_started", "🚀 Il quiz è iniziato!");
+
+      setGame(updatedGame);
+      setSelectedAnswer(null);
+      setJollyUsed(false);
+      setFinalRevealIndex(-1);
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setAnswers([]);
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+
+      setStatus("Quiz avviato");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore avvio: " + error.message);
+    }
+  }
+
+  async function revealAnswer() {
+    if (!game) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          phase: "reveal",
+          countdown_started_at_ms: null,
+          question_started_at_ms: null,
+          question_started_at: null,
+          question_duration: null,
+          time_left: 0,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(
+        game.id,
+        "answer_revealed",
+        `✅ Risposta corretta: ${currentQuestion?.correct_answer || "-"}`
+      );
+
+      setGame(data);
+      phaseSwitchInFlightRef.current = false;
+      await loadEventsOnly(game.id);
+      setStatus("Risposta mostrata");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore reveal: " + error.message);
+    }
+  }
+
+  async function nextQuestion() {
+    if (!game) return;
+
+    const nextIndex = Number(game.current_question_index || 0) + 1;
+
+    if (nextIndex >= questions.length) {
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: true,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setSelectedAnswer(null);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
+      return;
+    }
+
+    const q = questions.find((item) => item.position === nextIndex);
+
+    if (!q) {
+      try {
+        const { data, error } = await supabase
+          .from("games")
+          .update({
+            phase: "final",
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: true,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        await addLiveEvent(game.id, "final_started", "🏁 Quiz terminato! Classifica finale.");
+
+        setGame(data);
+        setSelectedAnswer(null);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setTvRevealEffect(null);
+        setTvJollyEffect(null);
+        lastTvQuestionAudioKeyRef.current = null;
+
+        await Promise.all([
+          loadPlayersOnly(game.id),
+          loadAnswersOnly(game.id),
+          loadEventsOnly(game.id),
+        ]);
+
+        setStatus("Quiz finito");
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore fine quiz: " + error.message);
+      }
+      return;
+    }
+
+    try {
+      const duration = normalizeQuestionTime(q);
+      const countdownStartedAtMs = Math.round(syncedNowRef.current);
+      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+
+      const { data: updatedGame, error } = await supabase
+        .from("games")
+        .update({
+          phase: "countdown",
+          current_question_index: nextIndex,
+          time_left: duration,
+          countdown_started_at_ms: countdownStartedAtMs,
+          question_started_at_ms: questionStartedAtMs,
+          question_started_at: new Date(questionStartedAtMs).toISOString(),
+          question_duration: duration,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(game.id, "next_question", `🎯 Nuova domanda: ${nextIndex + 1}`);
+
+      setSelectedAnswer(null);
+      setGame(updatedGame);
+      setStatus("Domanda successiva");
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setTvRevealEffect(null);
+      setTvJollyEffect(null);
+      lastTvQuestionAudioKeyRef.current = null;
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore next question: " + error.message);
+    }
+  }
+
+  function downloadLeaderboardCsv() {
+    if (!players.length) {
+      setStatus("Nessun giocatore da esportare");
+      return;
+    }
+
+    const ranking = [...players].sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+    });
+
+    const rows = [
+      ["Posizione", "Nome", "Punteggio"],
+      ...ranking.map((player, index) => [
+        index + 1,
+        player.name || "",
+        Number(player.score || 0),
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) =>
+        row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(";")
+      )
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const time = now.toTimeString().slice(0, 5).replace(":", "-");
+
+    link.href = url;
+    link.download = `classifica_${GAME_CODE}_${date}_${time}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+
+    setStatus("Classifica scaricata in CSV sul PC");
+  }
+
+  async function resetAll() {
+    if (!game) return;
+
+    const ok = window.confirm(
+      "Hai già scaricato la classifica CSV? Il reset cancellerà giocatori, risposte, domande ed eventi."
+    );
+
+    if (!ok) return;
+
+    try {
+      await supabase.from("answers").delete().eq("game_id", game.id);
+      await supabase.from("players").delete().eq("game_id", game.id);
+      await supabase.from("questions").delete().eq("game_id", game.id);
+      await supabase.from("live_events").delete().eq("game_id", game.id);
+
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          phase: "lobby",
+          current_question_index: 0,
+          time_left: 0,
+          countdown_started_at_ms: null,
+          question_started_at_ms: null,
+          question_started_at: null,
+          question_duration: null,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setJoinedPlayer(null);
+      setSelectedAnswer(null);
+      setJollyUsed(false);
+      setPlayers([]);
+      setQuestions([]);
+      setAnswers([]);
+      setLiveEvents([]);
+      setFinalRevealIndex(-1);
+      setRoundName("");
+      submitLockRef.current = false;
+      jollyLockRef.current = false;
+      phaseSwitchInFlightRef.current = false;
+      setGame(data);
+      setTvAudioReady(false);
+      setHideTvAudioOverlay(false);
+      lastTvQuestionAudioKeyRef.current = null;
+
+      await loadAll({ silent: true });
+      setStatus("Partita resettata");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore reset: " + error.message);
+    }
+  }
+
+  async function toggleLeaderboardOnTv() {
+    if (!game) return;
+
+    try {
+      const newValue = !Boolean(game.show_leaderboard);
+
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          show_leaderboard: newValue,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setGame(data);
+      setStatus(newValue ? "Classifica mostrata in TV" : "Classifica nascosta in TV");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore classifica TV: " + error.message);
+    }
+  }
+
+  async function useJollyCard() {
+    if (!joinedPlayer || !game || !currentQuestion) return;
+    if (jollyLockRef.current) return;
+
+    if (effectivePhase !== "question" || getRemainingMs(game, syncedNowRef.current) <= 0) {
+      setStatus("Il JOLLY si usa durante la domanda");
+      return;
+    }
+
+    if (jollyUsed || joinedPlayer.jolly_used) {
+      setStatus("JOLLY già usato");
+      return;
+    }
+
+    try {
+      jollyLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("id")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setStatus("Hai già risposto a questa domanda");
+        return;
+      }
+
+      const gainedPoints = 100;
+      const currentScore = Number(joinedPlayer.score || 0);
+
+      const { error: insertAnswerError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: currentQuestion.correct_answer,
+          is_correct: true,
+          is_jolly: true,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertAnswerError) throw insertAnswerError;
+
+      const { data: updatedPlayer, error: updatePlayerError } = await supabase
+        .from("players")
+        .update({
+          score: currentScore + gainedPoints,
+          jolly_used: true,
+        })
+        .eq("id", joinedPlayer.id)
+        .select()
+        .single();
+
+      if (updatePlayerError) throw updatePlayerError;
+
+      await addLiveEvent(
+        game.id,
+        "jolly_used",
+        `🔥 ${joinedPlayer.name} ha usato il JOLLY! Bonus finale calcolato a fine domanda`,
+        joinedPlayer.name
+      );
+
+      setJoinedPlayer(updatedPlayer);
+      setJollyUsed(true);
+      setSelectedAnswer(currentQuestion.correct_answer);
+      setAnswerFeedback({ type: "correct", points: gainedPoints });
+      setStatus("💥 JOLLY USATO: +100 provvisori, bonus calcolato a fine domanda");
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadAnswersOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore JOLLY: " + error.message);
+    } finally {
+      jollyLockRef.current = false;
+    }
+  }
+
+  async function submitAnswer(letter) {
+    if (!joinedPlayer || !currentQuestion || !game) return;
+    if (submitLockRef.current) return;
+    if (effectivePhase !== "question") return;
+    if (selectedAnswer) return;
+    if (getRemainingMs(game, syncedNowRef.current) <= 0) return;
+
+    try {
+      submitLockRef.current = true;
+
+      const { data: already, error: alreadyError } = await supabase
+        .from("answers")
+        .select("*")
+        .eq("question_id", currentQuestion.id)
+        .eq("player_id", joinedPlayer.id)
+        .maybeSingle();
+
+      if (alreadyError) throw alreadyError;
+
+      if (already) {
+        setSelectedAnswer(already.answer);
+        setStatus("Hai già risposto");
+        return;
+      }
+
+      const isCorrect = letter === currentQuestion.correct_answer;
+      let gainedPoints = 0;
+
+      if (isCorrect) {
+        const totalTime = COUNTDOWN_DURATION;
+        const remainingSecondsExact = Math.max(
+          0,
+          getRemainingMs(game, syncedNowRef.current) / 1000
+        );
+        const basePoints = 100;
+        const speedRatio = totalTime > 0 ? remainingSecondsExact / totalTime : 0;
+        const speedBonus = Math.round(speedRatio * 100);
+        gainedPoints = basePoints + speedBonus;
+      }
+
+      const { error: insertError } = await supabase.from("answers").insert([
+        {
+          game_id: game.id,
+          question_id: currentQuestion.id,
+          player_id: joinedPlayer.id,
+          answer: letter,
+          is_correct: isCorrect,
+          is_jolly: false,
+          score_awarded: gainedPoints,
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      if (isCorrect) {
+        const currentScore = Number(joinedPlayer.score || 0);
+
+        const { data: updatedPlayer, error: updateError } = await supabase
+          .from("players")
+          .update({ score: currentScore + gainedPoints })
+          .eq("id", joinedPlayer.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        setJoinedPlayer(updatedPlayer);
+      }
+
+      setSelectedAnswer(letter);
+      setAnswerFeedback({ type: isCorrect ? "correct" : "wrong", points: gainedPoints });
+      setStatus(isCorrect ? `Corretto! +${gainedPoints} punti` : "Risposta inviata");
+
+      await Promise.all([loadPlayersOnly(game.id), loadAnswersOnly(game.id)]);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore risposta: " + error.message);
+    } finally {
+      submitLockRef.current = false;
+    }
+  }
+
 
 /* =====================================================
    PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
