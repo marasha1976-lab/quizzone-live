@@ -1409,7 +1409,27 @@ export default function App() {
         return;
       }
 
-      const gainedPoints = 100;
+      const { data: correctAnswers, error: correctAnswersError } = await supabase
+  .from("answers")
+  .select("score_awarded, player_id")
+  .eq("question_id", currentQuestion.id)
+  .eq("is_correct", true);
+
+if (correctAnswersError) throw correctAnswersError;
+
+const otherCorrectAnswers = (correctAnswers || []).filter(
+  (a) => a.player_id !== joinedPlayer.id
+);
+
+const correctScores = otherCorrectAnswers
+  .map((a) => Number(a.score_awarded || 0))
+  .filter((score) => score > 100);
+
+const bestTimeBonus =
+  correctScores.length > 0 ? Math.max(...correctScores) - 100 : 100;
+
+const gainedPoints = 100 + bestTimeBonus;
+
       const currentScore = Number(joinedPlayer.score || 0);
 
       const { error: insertAnswerError } = await supabase.from("answers").insert([
@@ -1440,7 +1460,7 @@ export default function App() {
       await addLiveEvent(
         game.id,
         "jolly_used",
-        `🔥 ${joinedPlayer.name} ha usato il JOLLY! +100 punti`,
+        ``🔥 ${joinedPlayer.name} ha usato il JOLLY! +${gainedPoints} punti`,
         joinedPlayer.name
       );
 
@@ -1448,7 +1468,7 @@ export default function App() {
       setJollyUsed(true);
       setSelectedAnswer(currentQuestion.correct_answer);
       setAnswerFeedback({ type: "correct", points: gainedPoints });
-      setStatus("💥 JOLLY USATO: risposta corretta automatica! +100 punti");
+      setStatus(`💥 JOLLY USATO: risposta corretta automatica! +${gainedPoints} punti`);
 
       await Promise.all([
         loadPlayersOnly(game.id),
@@ -3081,7 +3101,7 @@ export default function App() {
                               fontSize: 18,
                             }}
                           >
-                            {player.name} {isMe ? "(Tu)" : ""}
+                            {player.name} {player.jolly_used ? "🃏" : ""} {isMe ? "(Tu)" : ""}
                           </div>
                         </div>
 
@@ -3568,7 +3588,7 @@ export default function App() {
                     >
                       <span>
                         {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "•"} {idx + 1}.{" "}
-                        {p.name}
+                        {p.name} {p.jolly_used ? "🃏" : ""}
                       </span>
                       <span style={{ color: GOLD, fontWeight: "bold" }}>{p.score || 0} pt</span>
                     </div>
@@ -4191,7 +4211,7 @@ export default function App() {
                       animation: "podiumRise 0.8s ease",
                     }}
                   >
-                    🥉 3° POSTO — {podiumPlayers[2].name} — {podiumPlayers[2].score} punti
+                    🥉 3° POSTO — {podiumPlayers[2].name} {podiumPlayers[2].jolly_used ? "🃏" : ""} — {podiumPlayers[2].score} punti
                   </div>
                 )}
 
@@ -4204,7 +4224,7 @@ export default function App() {
                       animation: "podiumRise 0.8s ease",
                     }}
                   >
-                    🥈 2° POSTO — {podiumPlayers[1].name} — {podiumPlayers[1].score} punti
+                    🥈 2° POSTO — {podiumPlayers[1].name} {podiumPlayers[1].jolly_used ? "🃏" : ""} — {podiumPlayers[1].score} punti
                   </div>
                 )}
 
@@ -4218,7 +4238,7 @@ export default function App() {
                       border: "2px solid rgba(255,215,64,0.8)",
                     }}
                   >
-                    🥇 1° POSTO — {podiumPlayers[0].name} — {podiumPlayers[0].score} punti
+                    🥇 1° POSTO — {podiumPlayers[0].name} {podiumPlayers[0].jolly_used ? "🃏" : ""} — {podiumPlayers[0].score} punti
                     <div style={{ fontSize: 56, marginTop: 16 }}>🎉 VINCITORE! 🎉</div>
                   </div>
                 )}
