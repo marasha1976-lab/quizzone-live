@@ -917,7 +917,6 @@ export default function App() {
       },
     });
   }
-
 /* =====================================================
    PARTE 6 - AZIONI PRINCIPALI DEL QUIZ
 ===================================================== */
@@ -1266,9 +1265,7 @@ export default function App() {
 
     const csv = rows
       .map((row) =>
-        row
-          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-          .join(";")
+        row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(";")
       )
       .join("\n");
 
@@ -1410,25 +1407,25 @@ export default function App() {
       }
 
       const { data: correctAnswers, error: correctAnswersError } = await supabase
-  .from("answers")
-  .select("score_awarded, player_id")
-  .eq("question_id", currentQuestion.id)
-  .eq("is_correct", true);
+        .from("answers")
+        .select("score_awarded, player_id")
+        .eq("question_id", currentQuestion.id)
+        .eq("is_correct", true);
 
-if (correctAnswersError) throw correctAnswersError;
+      if (correctAnswersError) throw correctAnswersError;
 
-const otherCorrectAnswers = (correctAnswers || []).filter(
-  (a) => a.player_id !== joinedPlayer.id
-);
+      const otherCorrectAnswers = (correctAnswers || []).filter(
+        (a) => a.player_id !== joinedPlayer.id
+      );
 
-const correctScores = otherCorrectAnswers
-  .map((a) => Number(a.score_awarded || 0))
-  .filter((score) => score > 100);
+      const correctScores = otherCorrectAnswers
+        .map((a) => Number(a.score_awarded || 0))
+        .filter((score) => score > 100);
 
-const bestTimeBonus =
-  correctScores.length > 0 ? Math.max(...correctScores) - 100 : 100;
+      const bestTimeBonus =
+        correctScores.length > 0 ? Math.max(...correctScores) - 100 : 100;
 
-const gainedPoints = 100 + bestTimeBonus;
+      const gainedPoints = 100 + bestTimeBonus;
 
       const currentScore = Number(joinedPlayer.score || 0);
 
@@ -1460,7 +1457,7 @@ const gainedPoints = 100 + bestTimeBonus;
       await addLiveEvent(
         game.id,
         "jolly_used",
-        ``🔥 ${joinedPlayer.name} ha usato il JOLLY! +${gainedPoints} punti`,
+        `🔥 ${joinedPlayer.name} ha usato il JOLLY! +${gainedPoints} punti`,
         joinedPlayer.name
       );
 
@@ -1513,7 +1510,10 @@ const gainedPoints = 100 + bestTimeBonus;
 
       if (isCorrect) {
         const totalTime = COUNTDOWN_DURATION;
-        const remainingSecondsExact = Math.max(0, getRemainingMs(game, syncedNowRef.current) / 1000);
+        const remainingSecondsExact = Math.max(
+          0,
+          getRemainingMs(game, syncedNowRef.current) / 1000
+        );
         const basePoints = 100;
         const speedRatio = totalTime > 0 ? remainingSecondsExact / totalTime : 0;
         const speedBonus = Math.round(speedRatio * 100);
@@ -1559,6 +1559,7 @@ const gainedPoints = 100 + bestTimeBonus;
       submitLockRef.current = false;
     }
   }
+
 
 /* =====================================================
    PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
