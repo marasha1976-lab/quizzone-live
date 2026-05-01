@@ -137,60 +137,97 @@ const playerBackgroundLogoImageStyle = {
    PARTE 2 - FUNZIONI UTILITY
 ===================================================== */
 
-// Ottieni titolo gioco
 function getGameTitle(game) {
   return game?.title || "Il Quizzone di Simone";
 }
 
-// Ordina classifica
 function sortPlayers(players) {
-  return [...players].sort((a, b) => b.score - a.score);
+  return [...players].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 }
 
-// Trova domanda corrente
 function getCurrentQuestion(questions, index) {
   return questions?.[index] || null;
 }
 
-// Tempo rimanente (sync con server)
-function getTimeLeftMs(game, nowMs) {
+function toMs(value) {
+  if (value === null || value === undefined) return NaN;
+  if (typeof value === "number") return value;
+
+  const parsedNumber = Number(value);
+  if (Number.isFinite(parsedNumber)) return parsedNumber;
+
+  const parsedDate = new Date(value).getTime();
+  return Number.isFinite(parsedDate) ? parsedDate : NaN;
+}
+
+function getRemainingMs(game, nowMs) {
   if (!game) return 0;
 
-  // countdown pre domanda
   if (game.phase === "countdown") {
-    const elapsed = nowMs - (game.countdown_started_at_ms || 0);
-    return Math.max(0, (game.time_left || 0) - elapsed);
+    const startMs = toMs(game.countdown_started_at_ms);
+    const questionStartMs = toMs(game.question_started_at_ms);
+
+    if (!Number.isFinite(startMs) || !Number.isFinite(questionStartMs)) return 0;
+    return Math.max(0, questionStartMs - nowMs);
   }
 
-  // domanda in corso
   if (game.phase === "question") {
-    const elapsed = nowMs - (game.question_started_at_ms || 0);
-    return Math.max(0, (game.question_duration || 0) - elapsed);
+    const startMs = toMs(game.question_started_at_ms);
+    const durationMs = Number(game.question_duration || COUNTDOWN_DURATION) * 1000;
+
+    if (!Number.isFinite(startMs) || durationMs <= 0) return 0;
+    return Math.max(0, startMs + durationMs - nowMs);
   }
 
   return 0;
 }
 
-// Formatta secondi
+function getRemainingTime(game, nowMs) {
+  return Math.ceil(getRemainingMs(game, nowMs) / 1000);
+}
+
+function getCountdownSecondsBeforeStart(game, nowMs) {
+  if (!game || game.phase !== "countdown") return 0;
+
+  const questionStartMs = toMs(game.question_started_at_ms);
+  if (!Number.isFinite(questionStartMs)) return 0;
+
+  return Math.max(0, Math.ceil((questionStartMs - nowMs) / 1000));
+}
+
+function getEffectivePhase(game, nowMs) {
+  if (!game) return "lobby";
+
+  if (game.phase === "countdown") {
+    const questionStartMs = toMs(game.question_started_at_ms);
+    if (Number.isFinite(questionStartMs) && nowMs >= questionStartMs) {
+      return "question";
+    }
+    return "countdown";
+  }
+
+  if (game.phase === "question") {
+    return "question";
+  }
+
+  return game.phase || "lobby";
+}
+
 function formatSeconds(ms) {
   return Math.ceil(ms / 1000);
 }
 
-// 🔥 HINT MEDIA (PLAYER)
 function getQuestionMediaHint(question) {
   if (!question) return "";
 
-  // VIDEO → TV
   if (question.youtube_url || question.video_url) {
     return "🎬 GUARDA IN TV";
   }
 
-  // AUDIO
   if (question.audio_url) {
     return "🎧 ASCOLTA BENE";
   }
 
-  // IMMAGINE
   if (question.image_url) {
     return "🖼️ GUARDA ATTENTAMENTE";
   }
@@ -198,10 +235,66 @@ function getQuestionMediaHint(question) {
   return "";
 }
 
-// Controlla se risposta è corretta
 function isCorrectAnswer(question, answer) {
   if (!question) return false;
   return question.correct_answer === answer;
+}
+
+function getAnswerColor(letter) {
+  if (letter === "A") return ANSWER_A;
+  if (letter === "B") return ANSWER_B;
+  if (letter === "C") return ANSWER_C;
+  if (letter === "D") return ANSWER_D;
+  return PRIMARY;
+}
+
+function getTvOptionStyle(letter) {
+  return {
+    background: getAnswerColor(letter),
+    color: "white",
+    borderRadius: 18,
+    padding: "20px 24px",
+    fontWeight: "bold",
+    fontSize: 30,
+    minHeight: 110,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+    border: "1px solid rgba(255,255,255,0.18)",
+  };
+}
+
+function getPlayerAnswerButtonStyle(letter, disabled, selected) {
+  return {
+    background: getAnswerColor(letter),
+    color: "white",
+    border: selected ? "3px solid rgba(255,255,255,0.95)" : "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 14,
+    fontWeight: "bold",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled && !selected ? 0.55 : 1,
+    boxShadow: selected
+      ? "0 0 24px rgba(255,255,255,0.35)"
+      : "0 8px 18px rgba(0,0,0,0.22)",
+    animation: selected ? "selectedPulse 1s infinite" : "none",
+  };
+}
+
+function getTvRevealOptionStyle(letter, correctAnswer) {
+  const isCorrect = letter === correctAnswer;
+
+  return {
+    ...getTvOptionStyle(letter),
+    background: isCorrect ? GREEN : "rgba(255,255,255,0.08)",
+    opacity: isCorrect ? 1 : 0.45,
+    border: isCorrect
+      ? "3px solid rgba(255,255,255,0.95)"
+      : "1px solid rgba(255,255,255,0.14)",
+    boxShadow: isCorrect
+      ? "0 0 34px rgba(34,197,94,0.55)"
+      : "0 8px 18px rgba(0,0,0,0.18)",
+  };
 }
 
 /* =====================================================
