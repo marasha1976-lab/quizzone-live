@@ -3189,6 +3189,178 @@ export default function App() {
 ===================================================== */
 
   if (role === "tv") {
+    const getTvYouTubeEmbedUrl = (url) => {
+      if (!url) return "";
+
+      try {
+        const parsed = new URL(String(url).trim());
+        let videoId = "";
+
+        if (parsed.hostname.includes("youtu.be")) {
+          videoId = parsed.pathname.replace("/", "").split("?")[0];
+        } else if (parsed.hostname.includes("youtube.com")) {
+          if (parsed.pathname.startsWith("/watch")) {
+            videoId = parsed.searchParams.get("v") || "";
+          } else if (parsed.pathname.startsWith("/shorts/")) {
+            videoId = parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+          } else if (parsed.pathname.startsWith("/embed/")) {
+            videoId = parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+          }
+        }
+
+        if (!videoId) return "";
+
+        const startRaw = parsed.searchParams.get("start") || parsed.searchParams.get("t") || "";
+        const start = String(startRaw).replace("s", "").trim();
+
+        const params = new URLSearchParams({
+          autoplay: "1",
+          controls: "1",
+          rel: "0",
+          modestbranding: "1",
+          playsinline: "1",
+        });
+
+        if (/^\d+$/.test(start)) {
+          params.set("start", start);
+        }
+
+        return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+      } catch {
+        return "";
+      }
+    };
+
+    const renderTvQuestionMedia = (question, variant = "question") => {
+      if (!question) return null;
+
+      const hasImage = Boolean(question.image_url);
+      const hasAudio = Boolean(question.audio_url);
+      const hasVideo = Boolean(question.video_url);
+      const hasYouTube = Boolean(question.youtube_url);
+      const youtubeEmbedUrl = getTvYouTubeEmbedUrl(question.youtube_url);
+
+      if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
+
+      const imageMaxHeight =
+        variant === "countdown" ? "22vh" : variant === "question" ? "20vh" : "18vh";
+
+      const videoHeight =
+        variant === "countdown" ? "26vh" : variant === "question" ? "28vh" : "22vh";
+
+      return (
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 1000,
+            margin: "0 auto",
+            display: "grid",
+            gap: 10,
+            alignContent: "start",
+            justifyItems: "center",
+            minHeight: 0,
+          }}
+        >
+          {hasImage && (
+            <div
+              style={{
+                width: "100%",
+                borderRadius: 18,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(255,255,255,0.06)",
+                boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+              }}
+            >
+              <img
+                src={question.image_url}
+                alt="Immagine domanda"
+                style={{
+                  display: "block",
+                  width: "100%",
+                  maxHeight: imageMaxHeight,
+                  objectFit: "contain",
+                  background: "rgba(0,0,0,0.18)",
+                }}
+              />
+            </div>
+          )}
+
+          {hasYouTube && youtubeEmbedUrl && (
+            <div
+              style={{
+                width: "100%",
+                borderRadius: 18,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(0,0,0,0.35)",
+                boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+              }}
+            >
+              <iframe
+                src={youtubeEmbedUrl}
+                title="Video YouTube domanda"
+                style={{
+                  display: "block",
+                  width: "100%",
+                  height: videoHeight,
+                  border: "none",
+                  background: "black",
+                }}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          )}
+
+          {hasVideo && !hasYouTube && (
+            <div
+              style={{
+                width: "100%",
+                borderRadius: 18,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(0,0,0,0.35)",
+                boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+              }}
+            >
+              <video
+                src={question.video_url}
+                controls
+                autoPlay
+                playsInline
+                style={{
+                  display: "block",
+                  width: "100%",
+                  maxHeight: videoHeight,
+                  background: "black",
+                }}
+              />
+            </div>
+          )}
+
+          {hasAudio && !hasVideo && !hasYouTube && (
+            <div
+              style={{
+                width: "fit-content",
+                maxWidth: "100%",
+                padding: variant === "countdown" ? "10px 18px" : "8px 16px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "rgba(255,255,255,0.07)",
+                fontSize: variant === "countdown"
+                  ? "clamp(16px, 1.4vw, 24px)"
+                  : "clamp(15px, 1.25vw, 22px)",
+                fontWeight: "bold",
+              }}
+            >
+              🔊 Audio domanda {variant === "question" ? "in riproduzione" : "riprodotto"}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div
         style={{
@@ -3675,61 +3847,7 @@ export default function App() {
                 overflow: "hidden",
               }}
             >
-              {(currentQuestion.image_url || currentQuestion.audio_url) && (
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 1000,
-                    margin: "0 auto",
-                    display: "grid",
-                    gap: 12,
-                    alignContent: "start",
-                    justifyItems: "center",
-                  }}
-                >
-                  {currentQuestion.image_url && (
-                    <div
-                      style={{
-                        width: "100%",
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        border: "1px solid rgba(255,255,255,0.16)",
-                        background: "rgba(255,255,255,0.06)",
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          maxHeight: "22vh",
-                          objectFit: "contain",
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {currentQuestion.audio_url && (
-                    <div
-                      style={{
-                        width: "fit-content",
-                        maxWidth: "100%",
-                        padding: "10px 18px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: "rgba(255,255,255,0.07)",
-                        fontSize: "clamp(16px, 1.4vw, 24px)",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      🔊 Audio domanda in riproduzione
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderTvQuestionMedia(currentQuestion, "countdown")}
 
               <div
                 style={{
@@ -3784,63 +3902,7 @@ export default function App() {
                 ⏳ {localTimeLeft}
               </div>
 
-              {(currentQuestion.image_url || currentQuestion.audio_url) && (
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 1000,
-                    margin: "0 auto",
-                    display: "grid",
-                    gap: 10,
-                    alignContent: "start",
-                    justifyItems: "center",
-                    minHeight: 0,
-                  }}
-                >
-                  {currentQuestion.image_url && (
-                    <div
-                      style={{
-                        width: "100%",
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        border: "1px solid rgba(255,255,255,0.16)",
-                        background: "rgba(255,255,255,0.06)",
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          maxHeight:
-                            currentQuestion.option_c || currentQuestion.option_d ? "20vh" : "24vh",
-                          objectFit: "contain",
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {currentQuestion.audio_url && (
-                    <div
-                      style={{
-                        width: "fit-content",
-                        maxWidth: "100%",
-                        padding: "8px 16px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: "rgba(255,255,255,0.07)",
-                        fontSize: "clamp(15px, 1.25vw, 22px)",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      🔊 Audio domanda in riproduzione
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderTvQuestionMedia(currentQuestion, "question")}
 
               <h2
                 style={{
@@ -3871,82 +3933,22 @@ export default function App() {
                   alignItems: "stretch",
                 }}
               >
-                <div
-                  style={{
-                    ...getTvOptionStyle("A"),
-                    fontSize: "clamp(18px, 1.7vw, 26px)",
-                    padding: "14px 16px",
-                    minHeight: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    lineHeight: 1.12,
-                    overflow: "hidden",
-                    wordBreak: "break-word",
-                    animation: "answerFlashPop 0.25s ease",
-                  }}
-                >
+                <div style={{ ...getTvOptionStyle("A"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
                   A - {currentQuestion.option_a}
                 </div>
 
-                <div
-                  style={{
-                    ...getTvOptionStyle("B"),
-                    fontSize: "clamp(18px, 1.7vw, 26px)",
-                    padding: "14px 16px",
-                    minHeight: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    lineHeight: 1.12,
-                    overflow: "hidden",
-                    wordBreak: "break-word",
-                    animation: "answerFlashPop 0.25s ease",
-                  }}
-                >
+                <div style={{ ...getTvOptionStyle("B"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
                   B - {currentQuestion.option_b}
                 </div>
 
                 {currentQuestion.option_c && (
-                  <div
-                    style={{
-                      ...getTvOptionStyle("C"),
-                      fontSize: "clamp(18px, 1.7vw, 26px)",
-                      padding: "14px 16px",
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      lineHeight: 1.12,
-                      overflow: "hidden",
-                      wordBreak: "break-word",
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
+                  <div style={{ ...getTvOptionStyle("C"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
                     C - {currentQuestion.option_c}
                   </div>
                 )}
 
                 {currentQuestion.option_d && (
-                  <div
-                    style={{
-                      ...getTvOptionStyle("D"),
-                      fontSize: "clamp(18px, 1.7vw, 26px)",
-                      padding: "14px 16px",
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      lineHeight: 1.12,
-                      overflow: "hidden",
-                      wordBreak: "break-word",
-                      animation: "answerFlashPop 0.25s ease",
-                    }}
-                  >
+                  <div style={{ ...getTvOptionStyle("D"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
                     D - {currentQuestion.option_d}
                   </div>
                 )}
@@ -3961,68 +3963,16 @@ export default function App() {
                 padding: "20px 24px",
                 height: "100%",
                 display: "grid",
-                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+                gridTemplateRows: jollyQuestionDetails.length > 0
+                  ? "auto auto auto auto minmax(0, 1fr)"
+                  : "auto auto auto minmax(0, 1fr)",
                 gap: 12,
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.35s ease",
               }}
             >
-              {(currentQuestion.image_url || currentQuestion.audio_url) && (
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 1000,
-                    margin: "0 auto",
-                    display: "grid",
-                    gap: 10,
-                    alignContent: "start",
-                    justifyItems: "center",
-                  }}
-                >
-                  {currentQuestion.image_url && (
-                    <div
-                      style={{
-                        width: "100%",
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        border: "1px solid rgba(255,255,255,0.16)",
-                        background: "rgba(255,255,255,0.06)",
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          maxHeight: "18vh",
-                          objectFit: "contain",
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {currentQuestion.audio_url && (
-                    <div
-                      style={{
-                        width: "fit-content",
-                        maxWidth: "100%",
-                        padding: "8px 16px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: "rgba(255,255,255,0.07)",
-                        fontSize: "clamp(15px, 1.25vw, 22px)",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      🔊 Audio domanda riprodotto
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderTvQuestionMedia(currentQuestion, "stats")}
 
               <h2
                 style={{
@@ -4041,6 +3991,30 @@ export default function App() {
               >
                 {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
               </div>
+
+              {jollyQuestionDetails.length > 0 && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 18,
+                    background: "rgba(255,215,64,0.14)",
+                    border: "1px solid rgba(255,215,64,0.45)",
+                    color: "white",
+                    fontSize: "clamp(15px, 1.3vw, 21px)",
+                    fontWeight: "bold",
+                    lineHeight: 1.25,
+                    boxShadow: "0 0 24px rgba(255,215,64,0.22)",
+                  }}
+                >
+                  {jollyQuestionDetails.map((jolly) => (
+                    <div key={jolly.playerId}>
+                      🃏 {jolly.playerName} ha usato il JOLLY:{" "}
+                      <span style={{ color: GOLD }}>{jolly.totalPoints} pt</span>{" "}
+                      (+{jolly.bonusPoints} bonus tempo da {jolly.sourceText})
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div
                 style={{
@@ -4076,61 +4050,7 @@ export default function App() {
                 animation: "correctRevealGlow 0.45s ease",
               }}
             >
-              {(currentQuestion.image_url || currentQuestion.audio_url) && (
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 1000,
-                    margin: "0 auto",
-                    display: "grid",
-                    gap: 10,
-                    alignContent: "start",
-                    justifyItems: "center",
-                  }}
-                >
-                  {currentQuestion.image_url && (
-                    <div
-                      style={{
-                        width: "100%",
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        border: "1px solid rgba(255,255,255,0.16)",
-                        background: "rgba(255,255,255,0.06)",
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
-                      }}
-                    >
-                      <img
-                        src={currentQuestion.image_url}
-                        alt="Immagine domanda"
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          maxHeight: "18vh",
-                          objectFit: "contain",
-                          background: "rgba(0,0,0,0.18)",
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {currentQuestion.audio_url && (
-                    <div
-                      style={{
-                        width: "fit-content",
-                        maxWidth: "100%",
-                        padding: "8px 16px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: "rgba(255,255,255,0.07)",
-                        fontSize: "clamp(15px, 1.25vw, 22px)",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      🔊 Audio domanda riprodotto
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderTvQuestionMedia(currentQuestion, "reveal")}
 
               <h2
                 style={{
@@ -4173,78 +4093,22 @@ export default function App() {
                   alignContent: "stretch",
                 }}
               >
-                <div
-                  style={{
-                    ...getTvRevealOptionStyle("A", currentQuestion.correct_answer),
-                    fontSize: "clamp(18px, 1.7vw, 26px)",
-                    padding: "14px 16px",
-                    minHeight: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    lineHeight: 1.12,
-                    overflow: "hidden",
-                    wordBreak: "break-word",
-                  }}
-                >
+                <div style={{ ...getTvRevealOptionStyle("A", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
                   A - {currentQuestion.option_a}
                 </div>
 
-                <div
-                  style={{
-                    ...getTvRevealOptionStyle("B", currentQuestion.correct_answer),
-                    fontSize: "clamp(18px, 1.7vw, 26px)",
-                    padding: "14px 16px",
-                    minHeight: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    lineHeight: 1.12,
-                    overflow: "hidden",
-                    wordBreak: "break-word",
-                  }}
-                >
+                <div style={{ ...getTvRevealOptionStyle("B", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
                   B - {currentQuestion.option_b}
                 </div>
 
                 {currentQuestion.option_c && (
-                  <div
-                    style={{
-                      ...getTvRevealOptionStyle("C", currentQuestion.correct_answer),
-                      fontSize: "clamp(18px, 1.7vw, 26px)",
-                      padding: "14px 16px",
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      lineHeight: 1.12,
-                      overflow: "hidden",
-                      wordBreak: "break-word",
-                    }}
-                  >
+                  <div style={{ ...getTvRevealOptionStyle("C", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
                     C - {currentQuestion.option_c}
                   </div>
                 )}
 
                 {currentQuestion.option_d && (
-                  <div
-                    style={{
-                      ...getTvRevealOptionStyle("D", currentQuestion.correct_answer),
-                      fontSize: "clamp(18px, 1.7vw, 26px)",
-                      padding: "14px 16px",
-                      minHeight: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      lineHeight: 1.12,
-                      overflow: "hidden",
-                      wordBreak: "break-word",
-                    }}
-                  >
+                  <div style={{ ...getTvRevealOptionStyle("D", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
                     D - {currentQuestion.option_d}
                   </div>
                 )}
@@ -4313,6 +4177,7 @@ export default function App() {
       </div>
     );
   }
+
 
 /* =====================================================
    PARTE 11 - RENDER SCHERMATA HOST E CHIUSURA COMPONENTE
