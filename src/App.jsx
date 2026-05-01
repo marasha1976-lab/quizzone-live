@@ -198,6 +198,16 @@ function getGameTitle(game) {
   return game?.title || "Il Quizzone di Simone";
 }
 
+function getQuestionMediaHint(question) {
+  if (!question) return "";
+
+  if (question.audio_url) return "🎧 ASCOLTA BENE";
+  if (question.youtube_url || question.video_url) return "🎬 GUARDA ATTENTAMENTE";
+  if (question.image_url) return "🖼️ GUARDA ATTENTAMENTE";
+
+  return "";
+}
+
 function getAnswerColor(letter) {
   switch (letter) {
     case "A":
@@ -423,7 +433,6 @@ function useRevealAudio() {
 
   return { playRevealAudio };
 }
-
 /* =====================================================
    PARTE 4 - COMPONENTE APP: STATE, REF, TEMPO E MEMO PRINCIPALI
 ===================================================== */
@@ -611,6 +620,44 @@ export default function App() {
     };
   }, [currentQuestionAnswers, players.length]);
 
+  const jollyQuestionDetails = useMemo(() => {
+    if (!currentQuestion?.id) return [];
+
+    const playerById = new Map(players.map((p) => [p.id, p]));
+
+    const normalCorrectAnswers = currentQuestionAnswers.filter(
+      (a) => a.is_correct === true && a.is_jolly !== true
+    );
+
+    const bestNormalCorrect = normalCorrectAnswers
+      .map((a) => {
+        const total = Number(a.score_awarded || 0);
+
+        return {
+          ...a,
+          totalPoints: total,
+          bonusPoints: Math.max(0, total - 100),
+          playerName: playerById.get(a.player_id)?.name || "un giocatore",
+        };
+      })
+      .sort((a, b) => b.bonusPoints - a.bonusPoints)[0];
+
+    return currentQuestionAnswers
+      .filter((a) => a.is_jolly === true)
+      .map((a) => {
+        const totalPoints = Number(a.score_awarded || 0);
+        const bonusPoints = Math.max(0, totalPoints - 100);
+
+        return {
+          playerId: a.player_id,
+          playerName: playerById.get(a.player_id)?.name || "Giocatore",
+          totalPoints,
+          bonusPoints,
+          sourceText: bestNormalCorrect ? bestNormalCorrect.playerName : "bonus massimo",
+        };
+      });
+  }, [currentQuestion?.id, currentQuestionAnswers, players]);
+
   const podiumPlayers = useMemo(
     () => [...players].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3),
     [players]
@@ -645,278 +692,282 @@ export default function App() {
    PARTE 5 - CARICAMENTO DATI, GAME SETUP, EVENTI E IMPORT CSV
 ===================================================== */
 
-  function normalizeQuestionTime() {
-    return COUNTDOWN_DURATION;
-  }
+function normalizeQuestionTime() {
+  return COUNTDOWN_DURATION;
+}
 
-  async function getOrCreateGame() {
-    const { data: existing, error: findError } = await supabase
-      .from("games")
-      .select("*")
-      .eq("code", GAME_CODE)
-      .maybeSingle();
+async function getOrCreateGame() {
+  const { data: existing, error: findError } = await supabase
+    .from("games")
+    .select("*")
+    .eq("code", GAME_CODE)
+    .maybeSingle();
 
-    if (findError) throw findError;
-    if (existing) return existing;
+  if (findError) throw findError;
+  if (existing) return existing;
 
-    const { data: created, error: createError } = await supabase
-      .from("games")
-      .insert([
-        {
-          code: GAME_CODE,
-          title: "Il Quizzone di Simone",
-          phase: "lobby",
-          current_question_index: 0,
-          time_left: 0,
-          countdown_started_at_ms: null,
-          question_started_at_ms: null,
-          question_started_at: null,
-          question_duration: null,
-          show_leaderboard: false,
-        },
-      ])
-      .select()
-      .single();
-
-    if (createError) throw createError;
-    return created;
-  }
-
-  async function ensureQuestions(gameId) {
-    const { data: existing, error: checkError } = await supabase
-      .from("questions")
-      .select("*")
-      .eq("game_id", gameId)
-      .order("position");
-
-    if (checkError) throw checkError;
-    if (existing && existing.length > 0) return existing;
-
-    const rows = DEMO_QUESTIONS.map((q) => ({
-      game_id: gameId,
-      ...q,
-      time_limit: COUNTDOWN_DURATION,
-    }));
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("questions")
-      .insert(rows)
-      .select();
-
-    if (insertError) throw insertError;
-    return (inserted || []).sort((a, b) => a.position - b.position);
-  }
-
-  async function addLiveEvent(gameId, eventType, eventText, playerNameValue = null) {
-    const { error } = await supabase.from("live_events").insert([
+  const { data: created, error: createError } = await supabase
+    .from("games")
+    .insert([
       {
-        game_id: gameId,
-        event_type: eventType,
-        player_name: playerNameValue,
-        event_text: eventText,
+        code: GAME_CODE,
+        title: "Il Quizzone di Simone",
+        phase: "lobby",
+        current_question_index: 0,
+        time_left: 0,
+        countdown_started_at_ms: null,
+        question_started_at_ms: null,
+        question_started_at: null,
+        question_duration: null,
+        show_leaderboard: false,
       },
+    ])
+    .select()
+    .single();
+
+  if (createError) throw createError;
+  return created;
+}
+
+async function ensureQuestions(gameId) {
+  const { data: existing, error: checkError } = await supabase
+    .from("questions")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("position");
+
+  if (checkError) throw checkError;
+  if (existing && existing.length > 0) return existing;
+
+  const rows = DEMO_QUESTIONS.map((q) => ({
+    game_id: gameId,
+    ...q,
+    time_limit: COUNTDOWN_DURATION,
+  }));
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("questions")
+    .insert(rows)
+    .select();
+
+  if (insertError) throw insertError;
+  return (inserted || []).sort((a, b) => a.position - b.position);
+}
+
+async function addLiveEvent(gameId, eventType, eventText, playerNameValue = null) {
+  const { error } = await supabase.from("live_events").insert([
+    {
+      game_id: gameId,
+      event_type: eventType,
+      player_name: playerNameValue,
+      event_text: eventText,
+    },
+  ]);
+  if (error) throw error;
+}
+
+async function loadGameOnly() {
+  const g = await getOrCreateGame();
+  setGame(g);
+  return g;
+}
+
+async function loadQuestionsOnly(gameId) {
+  if (!gameId) return [];
+  const { data, error } = await supabase
+    .from("questions")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("position");
+
+  if (error) throw error;
+  setQuestions(data || []);
+  return data || [];
+}
+
+async function loadPlayersOnly(gameId) {
+  if (!gameId) return [];
+  const { data, error } = await supabase
+    .from("players")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("score", { ascending: false });
+
+  if (error) throw error;
+
+  const sortedPlayers = [...(data || [])].sort((a, b) => {
+    const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  });
+
+  setPlayers(sortedPlayers);
+
+  if (joinedPlayer?.id) {
+    const updatedJoined = sortedPlayers.find((p) => p.id === joinedPlayer.id) || null;
+    if (updatedJoined) {
+      setJoinedPlayer(updatedJoined);
+      setJollyUsed(Boolean(updatedJoined.jolly_used));
+    }
+  }
+
+  return sortedPlayers;
+}
+
+async function loadAnswersOnly(gameId) {
+  if (!gameId) return [];
+  const { data, error } = await supabase.from("answers").select("*").eq("game_id", gameId);
+  if (error) throw error;
+  setAnswers(data || []);
+  return data || [];
+}
+
+async function loadEventsOnly(gameId) {
+  if (!gameId) return [];
+  const { data, error } = await supabase
+    .from("live_events")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+
+  if (error) throw error;
+
+  const sortedEvents = [...(data || [])].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+
+  setLiveEvents(sortedEvents);
+  return sortedEvents;
+}
+
+async function loadAll({ silent = false } = {}) {
+  try {
+    if (!silent) setIsLoading(true);
+    const g = await loadGameOnly();
+
+    await Promise.all([
+      loadQuestionsOnly(g.id),
+      loadPlayersOnly(g.id),
+      loadAnswersOnly(g.id),
+      loadEventsOnly(g.id),
     ]);
-    if (error) throw error;
+
+    if (!silent) setStatus("Dati caricati");
+  } catch (error) {
+    console.error(error);
+    setStatus("Errore caricamento: " + error.message);
+  } finally {
+    if (!silent) setIsLoading(false);
   }
+}
 
-  async function loadGameOnly() {
-    const g = await getOrCreateGame();
-    setGame(g);
-    return g;
-  }
+function normalizeCsvRows(rows) {
+  return rows
+    .filter((row) => row.question && row.correct_answer)
+    .map((row, index) => {
+      const type = String(row.type || "multiple").trim().toLowerCase();
+      const cleanedType =
+        type === "truefalse" || type === "vero_falso" ? "truefalse" : "multiple";
 
-  async function loadQuestionsOnly(gameId) {
-    if (!gameId) return [];
-    const { data, error } = await supabase
-      .from("questions")
-      .select("*")
-      .eq("game_id", gameId)
-      .order("position");
+      return {
+        position: index,
+        round: Number(row.round || 1),
+        type: cleanedType,
+        question: String(row.question || "").trim(),
+        option_a:
+          cleanedType === "truefalse"
+            ? String(row.option_a || "Vero").trim() || "Vero"
+            : String(row.option_a || "").trim(),
+        option_b:
+          cleanedType === "truefalse"
+            ? String(row.option_b || "Falso").trim() || "Falso"
+            : String(row.option_b || "").trim(),
+        option_c:
+          cleanedType === "truefalse" ? null : String(row.option_c || "").trim() || null,
+        option_d:
+          cleanedType === "truefalse" ? null : String(row.option_d || "").trim() || null,
+        correct_answer: String(row.correct_answer || "").trim().toUpperCase(),
+        explanation: String(row.explanation || "").trim(),
+        time_limit: COUNTDOWN_DURATION,
+        points: Number(row.points || 100),
 
-    if (error) throw error;
-    setQuestions(data || []);
-    return data || [];
-  }
-
-  async function loadPlayersOnly(gameId) {
-    if (!gameId) return [];
-    const { data, error } = await supabase
-      .from("players")
-      .select("*")
-      .eq("game_id", gameId)
-      .order("score", { ascending: false });
-
-    if (error) throw error;
-
-    const sortedPlayers = [...(data || [])].sort((a, b) => {
-      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        // 🔥 QUESTO È IL FIX
+        image_url: String(row.image_url || "").trim(),
+        audio_url: String(row.audio_url || "").trim(),
+        video_url: String(row.video_url || "").trim(),
+        youtube_url: String(row.youtube_url || "").trim(),
+      };
     });
+}
 
-    setPlayers(sortedPlayers);
+async function importCsvQuestions(file) {
+  if (!file || !game) return;
+  setStatus("Import CSV in corso...");
 
-    if (joinedPlayer?.id) {
-      const updatedJoined = sortedPlayers.find((p) => p.id === joinedPlayer.id) || null;
-      if (updatedJoined) {
-        setJoinedPlayer(updatedJoined);
-        setJollyUsed(Boolean(updatedJoined.jolly_used));
-      }
-    }
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: async (results) => {
+      try {
+        const parsedRows = normalizeCsvRows(results.data || []);
 
-    return sortedPlayers;
-  }
-
-  async function loadAnswersOnly(gameId) {
-    if (!gameId) return [];
-    const { data, error } = await supabase.from("answers").select("*").eq("game_id", gameId);
-    if (error) throw error;
-    setAnswers(data || []);
-    return data || [];
-  }
-
-  async function loadEventsOnly(gameId) {
-    if (!gameId) return [];
-    const { data, error } = await supabase
-      .from("live_events")
-      .select("*")
-      .eq("game_id", gameId)
-      .order("created_at", { ascending: false })
-      .limit(12);
-
-    if (error) throw error;
-
-    const sortedEvents = [...(data || [])].sort(
-      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    );
-
-    setLiveEvents(sortedEvents);
-    return sortedEvents;
-  }
-
-  async function loadAll({ silent = false } = {}) {
-    try {
-      if (!silent) setIsLoading(true);
-      const g = await loadGameOnly();
-
-      await Promise.all([
-        loadQuestionsOnly(g.id),
-        loadPlayersOnly(g.id),
-        loadAnswersOnly(g.id),
-        loadEventsOnly(g.id),
-      ]);
-
-      if (!silent) setStatus("Dati caricati");
-    } catch (error) {
-      console.error(error);
-      setStatus("Errore caricamento: " + error.message);
-    } finally {
-      if (!silent) setIsLoading(false);
-    }
-  }
-
-  function normalizeCsvRows(rows) {
-    return rows
-      .filter((row) => row.question && row.correct_answer)
-      .map((row, index) => {
-        const type = String(row.type || "multiple").trim().toLowerCase();
-        const cleanedType =
-          type === "truefalse" || type === "vero_falso" ? "truefalse" : "multiple";
-
-        return {
-          position: index,
-          round: Number(row.round || 1),
-          type: cleanedType,
-          question: String(row.question || "").trim(),
-          option_a:
-            cleanedType === "truefalse"
-              ? String(row.option_a || "Vero").trim() || "Vero"
-              : String(row.option_a || "").trim(),
-          option_b:
-            cleanedType === "truefalse"
-              ? String(row.option_b || "Falso").trim() || "Falso"
-              : String(row.option_b || "").trim(),
-          option_c:
-            cleanedType === "truefalse" ? null : String(row.option_c || "").trim() || null,
-          option_d:
-            cleanedType === "truefalse" ? null : String(row.option_d || "").trim() || null,
-          correct_answer: String(row.correct_answer || "").trim().toUpperCase(),
-          explanation: String(row.explanation || "").trim(),
-          time_limit: COUNTDOWN_DURATION,
-          points: Number(row.points || 100),
-          image_url: String(row.image_url || "").trim(),
-          audio_url: String(row.audio_url || "").trim(),
-        };
-      });
-  }
-
-  async function importCsvQuestions(file) {
-    if (!file || !game) return;
-    setStatus("Import CSV in corso...");
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const parsedRows = normalizeCsvRows(results.data || []);
-
-          if (!parsedRows.length) {
-            setStatus("CSV vuoto o non valido");
-            return;
-          }
-
-          await supabase.from("answers").delete().eq("game_id", game.id);
-          await supabase.from("questions").delete().eq("game_id", game.id);
-
-          const rowsToInsert = parsedRows.map((row) => ({
-            game_id: game.id,
-            ...row,
-          }));
-
-          const { error } = await supabase.from("questions").insert(rowsToInsert);
-          if (error) throw error;
-
-          await supabase
-            .from("games")
-            .update({
-              phase: "lobby",
-              current_question_index: 0,
-              time_left: 0,
-              countdown_started_at_ms: null,
-              question_started_at_ms: null,
-              question_started_at: null,
-              question_duration: null,
-              show_leaderboard: false,
-            })
-            .eq("id", game.id);
-
-          await addLiveEvent(
-            game.id,
-            "csv_imported",
-            `📁 Importate ${parsedRows.length} domande da CSV`
-          );
-
-          setSelectedAnswer(null);
-          setJollyUsed(false);
-          setFinalRevealIndex(-1);
-          submitLockRef.current = false;
-          jollyLockRef.current = false;
-          phaseSwitchInFlightRef.current = false;
-          setAnswers([]);
-
-          await loadAll();
-          setStatus(`Import completato: ${parsedRows.length} domande`);
-        } catch (error) {
-          console.error(error);
-          setStatus("Errore import CSV: " + error.message);
+        if (!parsedRows.length) {
+          setStatus("CSV vuoto o non valido");
+          return;
         }
-      },
-      error: () => {
-        setStatus("Errore lettura CSV");
-      },
-    });
-  }
+
+        await supabase.from("answers").delete().eq("game_id", game.id);
+        await supabase.from("questions").delete().eq("game_id", game.id);
+
+        const rowsToInsert = parsedRows.map((row) => ({
+          game_id: game.id,
+          ...row,
+        }));
+
+        const { error } = await supabase.from("questions").insert(rowsToInsert);
+        if (error) throw error;
+
+        await supabase
+          .from("games")
+          .update({
+            phase: "lobby",
+            current_question_index: 0,
+            time_left: 0,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            show_leaderboard: false,
+          })
+          .eq("id", game.id);
+
+        await addLiveEvent(
+          game.id,
+          "csv_imported",
+          `📁 Importate ${parsedRows.length} domande da CSV`
+        );
+
+        setSelectedAnswer(null);
+        setJollyUsed(false);
+        setFinalRevealIndex(-1);
+        submitLockRef.current = false;
+        jollyLockRef.current = false;
+        phaseSwitchInFlightRef.current = false;
+        setAnswers([]);
+
+        await loadAll();
+        setStatus(`Import completato: ${parsedRows.length} domande`);
+      } catch (error) {
+        console.error(error);
+        setStatus("Errore import CSV: " + error.message);
+      }
+    },
+    error: () => {
+      setStatus("Errore lettura CSV");
+    },
+  });
+}
 
 /* =====================================================
    PARTE 6 - AZIONI PRINCIPALI DEL QUIZ
@@ -2355,7 +2406,6 @@ export default function App() {
       </div>
     );
   };
-
 /* =====================================================
    PARTE 9 - RENDER SCHERMATA SCELTA RUOLO E PLAYER
 ===================================================== */
@@ -2658,6 +2708,8 @@ export default function App() {
       optionDText.length
     );
 
+    const playerMediaHint = getQuestionMediaHint(currentQuestion);
+
     const isVeryLongQuestion = questionText.length > 140;
     const isLongQuestion = questionText.length > 100;
     const hasVeryLongAnswers = longestAnswerLength > 34;
@@ -2737,6 +2789,21 @@ export default function App() {
     const playerTimerMarginBottom = compactQuestionLayout ? 6 : 8;
     const playerMediaMarginBottom = compactQuestionLayout ? 6 : 8;
     const playerStatusMarginTop = compactQuestionLayout ? 8 : 10;
+
+    const playerHintStyle = {
+      width: "fit-content",
+      maxWidth: "100%",
+      margin: "0 auto 10px",
+      padding: compactQuestionLayout ? "6px 12px" : "8px 16px",
+      borderRadius: 999,
+      background: "rgba(255,215,64,0.16)",
+      border: "1px solid rgba(255,215,64,0.55)",
+      color: GOLD,
+      fontSize: compactQuestionLayout ? "clamp(13px, 3.5vw, 16px)" : "clamp(15px, 4vw, 19px)",
+      fontWeight: "bold",
+      boxShadow: "0 0 18px rgba(255,215,64,0.18)",
+      textAlign: "center",
+    };
 
     return (
       <div
@@ -2860,10 +2927,16 @@ export default function App() {
 
           {effectivePhase === "countdown" && currentQuestion && (
             <div style={{ ...panelStyle, textAlign: "center" }}>
-              {renderQuestionMedia(currentQuestion, "player")}
+              <div style={{ fontSize: 24, fontWeight: "bold", marginBottom: 12 }}>
+                Preparati...
+              </div>
+
+              {playerMediaHint && <div style={playerHintStyle}>{playerMediaHint}</div>}
+
               <div style={{ fontSize: 24, opacity: 0.85, marginBottom: 12 }}>
                 Prossima domanda tra...
               </div>
+
               <div style={{ fontSize: 64, fontWeight: "bold", color: GOLD }}>
                 {countdownTimeLeft}
               </div>
@@ -2891,6 +2964,8 @@ export default function App() {
               >
                 ⏳ {localTimeLeft}s
               </div>
+
+              {playerMediaHint && <div style={playerHintStyle}>{playerMediaHint}</div>}
 
               <div style={{ marginBottom: playerMediaMarginBottom }}>
                 {renderQuestionMedia(currentQuestion, "player")}
@@ -3184,6 +3259,8 @@ export default function App() {
     );
   }
 
+
+
 /* =====================================================
    PARTE 10 - RENDER SCHERMATA TV
 ===================================================== */
@@ -3231,22 +3308,29 @@ export default function App() {
       }
     };
 
+    const getTvMediaHint = (question) => {
+      if (!question) return "";
+      if (question.audio_url) return "🎧 ASCOLTA BENE";
+      if (question.youtube_url || question.video_url) return "🎬 GUARDA ATTENTAMENTE";
+      if (question.image_url) return "🖼️ GUARDA ATTENTAMENTE";
+      return "";
+    };
+
     const renderTvQuestionMedia = (question, variant = "question") => {
       if (!question) return null;
 
-      const hasImage = Boolean(question.image_url);
-      const hasAudio = Boolean(question.audio_url);
-      const hasVideo = Boolean(question.video_url);
-      const hasYouTube = Boolean(question.youtube_url);
+      const hasImage = Boolean(question.image_url) && variant !== "countdown";
+      const hasAudio = Boolean(question.audio_url) && variant !== "countdown";
+      const hasVideo = Boolean(question.video_url) && variant === "question";
+      const hasYouTube = Boolean(question.youtube_url) && variant === "question";
       const youtubeEmbedUrl = getTvYouTubeEmbedUrl(question.youtube_url);
 
       if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
 
       const imageMaxHeight =
-        variant === "countdown" ? "22vh" : variant === "question" ? "20vh" : "18vh";
+        variant === "question" ? "20vh" : variant === "stats" ? "18vh" : "18vh";
 
-      const videoHeight =
-        variant === "countdown" ? "26vh" : variant === "question" ? "28vh" : "22vh";
+      const videoHeight = "28vh";
 
       return (
         <div
@@ -3344,17 +3428,15 @@ export default function App() {
               style={{
                 width: "fit-content",
                 maxWidth: "100%",
-                padding: variant === "countdown" ? "10px 18px" : "8px 16px",
+                padding: "8px 16px",
                 borderRadius: 999,
                 border: "1px solid rgba(255,255,255,0.18)",
                 background: "rgba(255,255,255,0.07)",
-                fontSize: variant === "countdown"
-                  ? "clamp(16px, 1.4vw, 24px)"
-                  : "clamp(15px, 1.25vw, 22px)",
+                fontSize: "clamp(15px, 1.25vw, 22px)",
                 fontWeight: "bold",
               }}
             >
-              🔊 Audio domanda {variant === "question" ? "in riproduzione" : "riprodotto"}
+              🔊 Audio domanda in riproduzione
             </div>
           )}
         </div>
@@ -3812,10 +3894,10 @@ export default function App() {
                           idx === 0
                             ? "rgba(255,215,64,0.18)"
                             : idx === 1
-                              ? "rgba(192,192,192,0.18)"
-                              : idx === 2
-                                ? "rgba(205,127,50,0.18)"
-                                : "rgba(255,255,255,0.06)",
+                            ? "rgba(192,192,192,0.18)"
+                            : idx === 2
+                            ? "rgba(205,127,50,0.18)"
+                            : "rgba(255,255,255,0.06)",
                         border:
                           idx === 0
                             ? "2px solid rgba(255,215,64,0.7)"
@@ -3834,7 +3916,7 @@ export default function App() {
             </div>
           )}
 
-          {!Boolean(game?.show_leaderboard) && effectivePhase === "countdown" && currentQuestion && (
+          {!Boolean(game?.show_leaderboard) && effectivePhase === "countdown" && (
             <div
               style={{
                 ...panelStyle,
@@ -3842,18 +3924,47 @@ export default function App() {
                 textAlign: "center",
                 height: "100%",
                 display: "grid",
-                gridTemplateRows: "auto auto 1fr",
-                gap: 16,
+                gridTemplateRows: "auto auto auto auto",
+                alignContent: "center",
+                gap: 22,
                 overflow: "hidden",
               }}
             >
-              {renderTvQuestionMedia(currentQuestion, "countdown")}
+              <div
+                style={{
+                  fontSize: "clamp(34px, 3vw, 52px)",
+                  fontWeight: "bold",
+                  opacity: 0.95,
+                }}
+              >
+                Preparati...
+              </div>
+
+              {currentQuestion && getTvMediaHint(currentQuestion) && (
+                <div
+                  style={{
+                    width: "fit-content",
+                    maxWidth: "90%",
+                    margin: "0 auto",
+                    padding: "10px 24px",
+                    borderRadius: 999,
+                    background: "rgba(255,215,64,0.16)",
+                    border: "1px solid rgba(255,215,64,0.55)",
+                    color: GOLD,
+                    fontSize: "clamp(20px, 2vw, 34px)",
+                    fontWeight: "bold",
+                    boxShadow: "0 0 24px rgba(255,215,64,0.25)",
+                    textAlign: "center",
+                  }}
+                >
+                  {getTvMediaHint(currentQuestion)}
+                </div>
+              )}
 
               <div
                 style={{
                   fontSize: "clamp(28px, 2.4vw, 38px)",
                   opacity: 0.9,
-                  alignSelf: "center",
                 }}
               >
                 Prossima domanda tra...
@@ -3861,12 +3972,11 @@ export default function App() {
 
               <div
                 style={{
-                  fontSize: "clamp(72px, 9vw, 120px)",
+                  fontSize: "clamp(72px, 9vw, 130px)",
                   fontWeight: "bold",
                   color: GOLD,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  lineHeight: 1,
+                  animation: "pulseTime 1s infinite",
                 }}
               >
                 {countdownTimeLeft}
@@ -3874,7 +3984,7 @@ export default function App() {
             </div>
           )}
 
-          {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && currentQuestion && (
+          {!Boolean(game?.show_leaderboard) && effectivePhase === "question" && (
             <div
               style={{
                 ...panelStyle,
@@ -3883,160 +3993,214 @@ export default function App() {
                 height: "100%",
                 overflow: "hidden",
                 display: "grid",
-                gridTemplateRows: "auto auto auto minmax(0, 1fr)",
-                gap: 12,
+                gridTemplateRows: "auto auto auto auto minmax(0, 1fr)",
+                gap: 10,
               }}
             >
-              <div
-                style={{
-                  fontSize: "clamp(32px, 4vw, 58px)",
-                  fontWeight: "bold",
-                  color: localTimeLeft <= 5 ? GOLD : "white",
-                  textAlign: "center",
-                  lineHeight: 1,
-                  flexShrink: 0,
-                  animation:
-                    localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
-                }}
-              >
-                ⏳ {localTimeLeft}
-              </div>
-
-              {renderTvQuestionMedia(currentQuestion, "question")}
-
-              <h2
-                style={{
-                  fontSize: "clamp(22px, 2.4vw, 36px)",
-                  lineHeight: 1.15,
-                  margin: 0,
-                  textAlign: "center",
-                  minHeight: 0,
-                  overflow: "hidden",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: "vertical",
-                }}
-              >
-                {currentQuestion.question}
-              </h2>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gridAutoRows: "minmax(0, 1fr)",
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: 1120,
-                  margin: "0 auto",
-                  minHeight: 0,
-                  alignItems: "stretch",
-                }}
-              >
-                <div style={{ ...getTvOptionStyle("A"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
-                  A - {currentQuestion.option_a}
+              {!currentQuestion ? (
+                <div
+                  style={{
+                    fontSize: 34,
+                    fontWeight: "bold",
+                    textAlign: "center",
+                    alignSelf: "center",
+                  }}
+                >
+                  Caricamento domanda...
                 </div>
-
-                <div style={{ ...getTvOptionStyle("B"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
-                  B - {currentQuestion.option_b}
-                </div>
-
-                {currentQuestion.option_c && (
-                  <div style={{ ...getTvOptionStyle("C"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
-                    C - {currentQuestion.option_c}
+              ) : (
+                <>
+                  <div
+                    style={{
+                      fontSize: "clamp(32px, 4vw, 58px)",
+                      fontWeight: "bold",
+                      color: localTimeLeft <= 5 ? GOLD : "white",
+                      textAlign: "center",
+                      lineHeight: 1,
+                      animation:
+                        localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
+                    }}
+                  >
+                    ⏳ {localTimeLeft}
                   </div>
-                )}
 
-                {currentQuestion.option_d && (
-                  <div style={{ ...getTvOptionStyle("D"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
-                    D - {currentQuestion.option_d}
+                  {getTvMediaHint(currentQuestion) && (
+                    <div
+                      style={{
+                        width: "fit-content",
+                        maxWidth: "90%",
+                        margin: "0 auto",
+                        padding: "8px 22px",
+                        borderRadius: 999,
+                        background: "rgba(255,215,64,0.16)",
+                        border: "1px solid rgba(255,215,64,0.55)",
+                        color: GOLD,
+                        fontSize: "clamp(18px, 1.8vw, 30px)",
+                        fontWeight: "bold",
+                        boxShadow: "0 0 24px rgba(255,215,64,0.20)",
+                        textAlign: "center",
+                      }}
+                    >
+                      {getTvMediaHint(currentQuestion)}
+                    </div>
+                  )}
+
+                  {renderTvQuestionMedia(currentQuestion, "question")}
+
+                  <h2
+                    style={{
+                      fontSize: "clamp(22px, 2.4vw, 36px)",
+                      lineHeight: 1.15,
+                      margin: 0,
+                      textAlign: "center",
+                      minHeight: 0,
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {currentQuestion.question}
+                  </h2>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gridAutoRows: "minmax(0, 1fr)",
+                      gap: 12,
+                      width: "100%",
+                      maxWidth: 1120,
+                      margin: "0 auto",
+                      minHeight: 0,
+                      alignItems: "stretch",
+                    }}
+                  >
+                    <div style={{ ...getTvOptionStyle("A"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
+                      A - {currentQuestion.option_a}
+                    </div>
+
+                    <div style={{ ...getTvOptionStyle("B"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
+                      B - {currentQuestion.option_b}
+                    </div>
+
+                    {currentQuestion.option_c && (
+                      <div style={{ ...getTvOptionStyle("C"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
+                        C - {currentQuestion.option_c}
+                      </div>
+                    )}
+
+                    {currentQuestion.option_d && (
+                      <div style={{ ...getTvOptionStyle("D"), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word", animation: "answerFlashPop 0.25s ease" }}>
+                        D - {currentQuestion.option_d}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
           )}
 
-          {game?.phase === "stats" && currentQuestion && !game?.show_leaderboard && (
+          {game?.phase === "stats" && !game?.show_leaderboard && (
             <div
               style={{
                 ...panelStyle,
                 padding: "20px 24px",
                 height: "100%",
                 display: "grid",
-                gridTemplateRows: jollyQuestionDetails.length > 0
-                  ? "auto auto auto auto minmax(0, 1fr)"
-                  : "auto auto auto minmax(0, 1fr)",
+                gridTemplateRows:
+                  currentQuestion && jollyQuestionDetails.length > 0
+                    ? "auto auto auto auto minmax(0, 1fr)"
+                    : "auto auto auto minmax(0, 1fr)",
                 gap: 12,
                 overflow: "hidden",
                 textAlign: "center",
                 animation: "correctRevealGlow 0.35s ease",
               }}
             >
-              {renderTvQuestionMedia(currentQuestion, "stats")}
-
-              <h2
-                style={{
-                  fontSize: "clamp(24px, 3vw, 42px)",
-                  margin: 0,
-                }}
-              >
-                📊 Percentuali risposte
-              </h2>
-
-              <div
-                style={{
-                  fontSize: "clamp(16px, 1.6vw, 24px)",
-                  color: GOLD,
-                }}
-              >
-                {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
-              </div>
-
-              {jollyQuestionDetails.length > 0 && (
+              {!currentQuestion ? (
                 <div
                   style={{
-                    padding: "10px 16px",
-                    borderRadius: 18,
-                    background: "rgba(255,215,64,0.14)",
-                    border: "1px solid rgba(255,215,64,0.45)",
-                    color: "white",
-                    fontSize: "clamp(15px, 1.3vw, 21px)",
+                    fontSize: 34,
                     fontWeight: "bold",
-                    lineHeight: 1.25,
-                    boxShadow: "0 0 24px rgba(255,215,64,0.22)",
+                    color: GOLD,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
                   }}
                 >
-                  {jollyQuestionDetails.map((jolly) => (
-                    <div key={jolly.playerId}>
-                      🃏 {jolly.playerName} ha usato il JOLLY:{" "}
-                      <span style={{ color: GOLD }}>{jolly.totalPoints} pt</span>{" "}
-                      (+{jolly.bonusPoints} bonus tempo da {jolly.sourceText})
-                    </div>
-                  ))}
+                  📊 Caricamento risultati...
                 </div>
-              )}
+              ) : (
+                <>
+                  {renderTvQuestionMedia(currentQuestion, "stats")}
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: 1120,
-                  margin: "0 auto",
-                  minHeight: 0,
-                  alignContent: "stretch",
-                }}
-              >
-                {renderStatsBar("A", currentQuestion.option_a)}
-                {renderStatsBar("B", currentQuestion.option_b)}
-                {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
-                {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
-              </div>
+                  <h2
+                    style={{
+                      fontSize: "clamp(24px, 3vw, 42px)",
+                      margin: 0,
+                    }}
+                  >
+                    📊 Percentuali risposte
+                  </h2>
+
+                  <div
+                    style={{
+                      fontSize: "clamp(16px, 1.6vw, 24px)",
+                      color: GOLD,
+                    }}
+                  >
+                    {answerStats.totalAnswered} / {answerStats.totalPlayers} giocatori hanno risposto
+                  </div>
+
+                  {jollyQuestionDetails.length > 0 && (
+                    <div
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 18,
+                        background: "rgba(255,215,64,0.14)",
+                        border: "1px solid rgba(255,215,64,0.45)",
+                        color: "white",
+                        fontSize: "clamp(15px, 1.3vw, 21px)",
+                        fontWeight: "bold",
+                        lineHeight: 1.25,
+                        boxShadow: "0 0 24px rgba(255,215,64,0.22)",
+                      }}
+                    >
+                      {jollyQuestionDetails.map((jolly) => (
+                        <div key={jolly.playerId}>
+                          🃏 {jolly.playerName} ha usato il JOLLY:{" "}
+                          <span style={{ color: GOLD }}>{jolly.totalPoints} pt</span>{" "}
+                          (+{jolly.bonusPoints} bonus tempo da {jolly.sourceText})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                      width: "100%",
+                      maxWidth: 1120,
+                      margin: "0 auto",
+                      minHeight: 0,
+                      alignContent: "stretch",
+                    }}
+                  >
+                    {renderStatsBar("A", currentQuestion.option_a)}
+                    {renderStatsBar("B", currentQuestion.option_b)}
+                    {currentQuestion.option_c && renderStatsBar("C", currentQuestion.option_c)}
+                    {currentQuestion.option_d && renderStatsBar("D", currentQuestion.option_d)}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          {game?.phase === "reveal" && currentQuestion && !game?.show_leaderboard && (
+          {game?.phase === "reveal" && !game?.show_leaderboard && (
             <div
               style={{
                 ...panelStyle,
@@ -4050,69 +4214,87 @@ export default function App() {
                 animation: "correctRevealGlow 0.45s ease",
               }}
             >
-              {renderTvQuestionMedia(currentQuestion, "reveal")}
-
-              <h2
-                style={{
-                  fontSize: "clamp(26px, 3.2vw, 44px)",
-                  color: GREEN,
-                  margin: 0,
-                }}
-              >
-                ✅ Risposta corretta: {currentQuestion.correct_answer}
-              </h2>
-
-              {currentQuestion.explanation ? (
-                <p
+              {!currentQuestion ? (
+                <div
                   style={{
-                    fontSize: "clamp(16px, 1.6vw, 24px)",
-                    margin: 0,
-                    opacity: 0.96,
-                    lineHeight: 1.2,
-                    overflow: "hidden",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
+                    fontSize: 34,
+                    fontWeight: "bold",
+                    color: GOLD,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
                   }}
                 >
-                  {currentQuestion.explanation}
-                </p>
+                  ✅ Caricamento risposta...
+                </div>
               ) : (
-                <div />
+                <>
+                  {renderTvQuestionMedia(currentQuestion, "reveal")}
+
+                  <h2
+                    style={{
+                      fontSize: "clamp(26px, 3.2vw, 44px)",
+                      color: GREEN,
+                      margin: 0,
+                    }}
+                  >
+                    ✅ Risposta corretta: {currentQuestion.correct_answer}
+                  </h2>
+
+                  {currentQuestion.explanation ? (
+                    <p
+                      style={{
+                        fontSize: "clamp(16px, 1.6vw, 24px)",
+                        margin: 0,
+                        opacity: 0.96,
+                        lineHeight: 1.2,
+                        overflow: "hidden",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                      }}
+                    >
+                      {currentQuestion.explanation}
+                    </p>
+                  ) : (
+                    <div />
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                      width: "100%",
+                      maxWidth: 1120,
+                      margin: "0 auto",
+                      minHeight: 0,
+                      alignContent: "stretch",
+                    }}
+                  >
+                    <div style={{ ...getTvRevealOptionStyle("A", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
+                      A - {currentQuestion.option_a}
+                    </div>
+
+                    <div style={{ ...getTvRevealOptionStyle("B", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
+                      B - {currentQuestion.option_b}
+                    </div>
+
+                    {currentQuestion.option_c && (
+                      <div style={{ ...getTvRevealOptionStyle("C", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
+                        C - {currentQuestion.option_c}
+                      </div>
+                    )}
+
+                    {currentQuestion.option_d && (
+                      <div style={{ ...getTvRevealOptionStyle("D", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
+                        D - {currentQuestion.option_d}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                  width: "100%",
-                  maxWidth: 1120,
-                  margin: "0 auto",
-                  minHeight: 0,
-                  alignContent: "stretch",
-                }}
-              >
-                <div style={{ ...getTvRevealOptionStyle("A", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
-                  A - {currentQuestion.option_a}
-                </div>
-
-                <div style={{ ...getTvRevealOptionStyle("B", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
-                  B - {currentQuestion.option_b}
-                </div>
-
-                {currentQuestion.option_c && (
-                  <div style={{ ...getTvRevealOptionStyle("C", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
-                    C - {currentQuestion.option_c}
-                  </div>
-                )}
-
-                {currentQuestion.option_d && (
-                  <div style={{ ...getTvRevealOptionStyle("D", currentQuestion.correct_answer), fontSize: "clamp(18px, 1.7vw, 26px)", padding: "14px 16px", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", lineHeight: 1.12, overflow: "hidden", wordBreak: "break-word" }}>
-                    D - {currentQuestion.option_d}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -4170,6 +4352,19 @@ export default function App() {
                     <div style={{ fontSize: 56, marginTop: 16 }}>🎉 VINCITORE! 🎉</div>
                   </div>
                 )}
+
+                {players.length === 0 && (
+                  <div
+                    style={{
+                      ...panelStyle,
+                      fontSize: 34,
+                      textAlign: "center",
+                      background: "rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    Nessun giocatore in classifica
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -4177,7 +4372,6 @@ export default function App() {
       </div>
     );
   }
-
 
 /* =====================================================
    PARTE 11 - RENDER SCHERMATA HOST E CHIUSURA COMPONENTE
