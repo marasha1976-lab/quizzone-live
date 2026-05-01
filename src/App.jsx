@@ -133,14 +133,75 @@ const playerBackgroundLogoImageStyle = {
   height: "auto",
 };
 
+/* =====================================================
+   PARTE 2 - FUNZIONI UTILITY
+===================================================== */
+
+// Ottieni titolo gioco
+function getGameTitle(game) {
+  return game?.title || "Il Quizzone di Simone";
+}
+
+// Ordina classifica
+function sortPlayers(players) {
+  return [...players].sort((a, b) => b.score - a.score);
+}
+
+// Trova domanda corrente
+function getCurrentQuestion(questions, index) {
+  return questions?.[index] || null;
+}
+
+// Tempo rimanente (sync con server)
+function getTimeLeftMs(game, nowMs) {
+  if (!game) return 0;
+
+  // countdown pre domanda
+  if (game.phase === "countdown") {
+    const elapsed = nowMs - (game.countdown_started_at_ms || 0);
+    return Math.max(0, (game.time_left || 0) - elapsed);
+  }
+
+  // domanda in corso
+  if (game.phase === "question") {
+    const elapsed = nowMs - (game.question_started_at_ms || 0);
+    return Math.max(0, (game.question_duration || 0) - elapsed);
+  }
+
+  return 0;
+}
+
+// Formatta secondi
+function formatSeconds(ms) {
+  return Math.ceil(ms / 1000);
+}
+
+// 🔥 HINT MEDIA (PLAYER)
 function getQuestionMediaHint(question) {
   if (!question) return "";
 
-  if (question.youtube_url || question.video_url) return "🎬 GUARDA IN TV";
-  if (question.audio_url) return "🎧 ASCOLTA BENE";
-  if (question.image_url) return "🖼️ GUARDA ATTENTAMENTE";
+  // VIDEO → TV
+  if (question.youtube_url || question.video_url) {
+    return "🎬 GUARDA IN TV";
+  }
+
+  // AUDIO
+  if (question.audio_url) {
+    return "🎧 ASCOLTA BENE";
+  }
+
+  // IMMAGINE
+  if (question.image_url) {
+    return "🖼️ GUARDA ATTENTAMENTE";
+  }
 
   return "";
+}
+
+// Controlla se risposta è corretta
+function isCorrectAnswer(question, answer) {
+  if (!question) return false;
+  return question.correct_answer === answer;
 }
 
 /* =====================================================
