@@ -445,8 +445,9 @@ function useRevealAudio() {
 
   return { playRevealAudio };
 }
+
 /* =====================================================
-   PARTE 4 - COMPONENTE APP: STATE, REF, TEMPO E MEMO PRINCIPALI
+   PARTE 4A - COMPONENTE APP: STATE E REF
 ===================================================== */
 
 export default function App() {
@@ -471,6 +472,7 @@ export default function App() {
 
   const [hostBanner] = useState(null);
   const [finalRevealIndex, setFinalRevealIndex] = useState(-1);
+  const [leaderboardRevealCount, setLeaderboardRevealCount] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
   const [answerFeedback, setAnswerFeedback] = useState(null);
@@ -481,7 +483,14 @@ export default function App() {
 
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [renderNow, setRenderNow] = useState(Date.now());
-const [playerQuestionScale, setPlayerQuestionScale] = useState(1);
+
+  const [playerQuestionScale, setPlayerQuestionScale] = useState(1);
+  const [playerQuestionFitReady, setPlayerQuestionFitReady] = useState(false);
+
+  const [stop10Results, setStop10Results] = useState([]);
+  const [stop10PlayerStopped, setStop10PlayerStopped] = useState(false);
+  const [stop10PlayerResult, setStop10PlayerResult] = useState(null);
+  const [stop10TvEffect, setStop10TvEffect] = useState(null);
 
   const bannerTimeoutRef = useRef(null);
   const lastTvJollyEventIdRef = useRef(null);
@@ -489,6 +498,7 @@ const [playerQuestionScale, setPlayerQuestionScale] = useState(1);
   const realtimeChannelRef = useRef(null);
   const submitLockRef = useRef(false);
   const jollyLockRef = useRef(false);
+  const stop10LockRef = useRef(false);
   const fallbackRefreshRef = useRef(null);
   const phaseSwitchInFlightRef = useRef(false);
   const syncedNowRef = useRef(Date.now());
@@ -496,8 +506,13 @@ const [playerQuestionScale, setPlayerQuestionScale] = useState(1);
   const lastTvQuestionAudioKeyRef = useRef(null);
   const tvQuestionAudioRef = useRef(null);
 
-const playerQuestionOuterRef = useRef(null);
-const playerQuestionInnerRef = useRef(null);
+  const playerQuestionOuterRef = useRef(null);
+  const playerQuestionInnerRef = useRef(null);
+
+/* =====================================================
+   PARTE 4B - TEMPO, CLOCK SERVER, AUDIO E RUOLO
+===================================================== */
+
   const syncedNowMs = renderNow + serverOffsetMs;
   syncedNowRef.current = syncedNowMs;
 
@@ -533,20 +548,24 @@ const playerQuestionInnerRef = useRef(null);
     const id = setInterval(() => {
       setRenderNow(Date.now());
     }, 100);
+
     return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
     syncServerClock();
+
     const id = setInterval(() => {
       syncServerClock();
     }, 30000);
+
     return () => clearInterval(id);
   }, [syncServerClock]);
 
   const { unlockAudio, startSyncedCountdown, stopCountdownAudio } = useCountdownAudio(
     () => syncedNowRef.current
   );
+
   const { playRevealAudio } = useRevealAudio();
 
   const activateTvAudio = useCallback(async () => {
@@ -557,6 +576,7 @@ const playerQuestionInnerRef = useRef(null);
       unlockAudio();
 
       const audioEl = tvQuestionAudioRef.current;
+
       if (audioEl) {
         audioEl.pause();
         audioEl.currentTime = 0;
@@ -583,6 +603,7 @@ const playerQuestionInnerRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const params = new URLSearchParams(window.location.search);
     const roleFromUrl = params.get("role");
 
@@ -590,121 +611,230 @@ const playerQuestionInnerRef = useRef(null);
     if (roleFromUrl === "tv") setRole("tv");
     if (roleFromUrl === "host") setRole("host");
   }, []);
+/* =====================================================
+   PARTE 4C - MEMO QUIZ, STOP10, STATISTICHE, JOLLY E TV
+===================================================== */
 
-  const effectivePhase = useMemo(() => getEffectivePhase(game, syncedNowMs), [game, syncedNowMs]);
-  const localTimeLeft = useMemo(() => getRemainingTime(game, syncedNowMs), [game, syncedNowMs]);
-  const countdownTimeLeft = useMemo(
-    () => getCountdownSecondsBeforeStart(game, syncedNowMs),
-    [game, syncedNowMs]
+const effectivePhase = useMemo(() => {
+  return getEffectivePhase(game, syncedNowMs);
+}, [game, syncedNowMs]);
+
+const localTimeLeft = useMemo(() => {
+  return getRemainingTime(game, syncedNowMs);
+}, [game, syncedNowMs]);
+
+const countdownTimeLeft = useMemo(() => {
+  return getCountdownSecondsBeforeStart(game, syncedNowMs);
+}, [game, syncedNowMs]);
+
+/* ===== STOP10 ===== */
+
+const stop10RoundId = useMemo(() => {
+  if (!game?.stop10_round_id) return "";
+  return String(game.stop10_round_id);
+}, [game?.stop10_round_id]);
+
+const stop10StartedAtMs = useMemo(() => {
+  return toMs(game?.stop10_started_at_ms);
+}, [game?.stop10_started_at_ms]);
+
+const stop10ElapsedMs = useMemo(() => {
+  if (!Number.isFinite(stop10StartedAtMs)) return 0;
+  return Math.max(0, syncedNowMs - stop10StartedAtMs);
+}, [syncedNowMs, stop10StartedAtMs]);
+
+const stop10ElapsedSeconds = useMemo(() => {
+  return stop10ElapsedMs / 1000;
+}, [stop10ElapsedMs]);
+
+const stop10HideTimer = stop10ElapsedMs >= 5000;
+
+const stop10DisplayTime = useMemo(() => {
+  if (!Number.isFinite(stop10ElapsedMs)) return "0.0";
+  if (stop10ElapsedMs >= 5000) return "???";
+
+  const remaining = Math.max(0, 10 - stop10ElapsedMs / 1000);
+  return remaining.toFixed(1);
+}, [stop10ElapsedMs]);
+
+const stop10IsRunning =
+  effectivePhase === "stop10" && stop10ElapsedMs < 10000;
+
+const stop10IsFinished =
+  effectivePhase === "stop10_results" || stop10ElapsedMs >= 10000;
+
+const currentStop10Results = useMemo(() => {
+  if (!stop10RoundId) return [];
+
+  return stop10Results
+    .filter((r) => String(r.round_id) === String(stop10RoundId))
+    .sort((a, b) => Number(a.diff_ms || 0) - Number(b.diff_ms || 0));
+}, [stop10Results, stop10RoundId]);
+
+const myStop10Result = useMemo(() => {
+  if (!joinedPlayer?.id || !stop10RoundId) return null;
+
+  return (
+    stop10Results.find(
+      (r) =>
+        String(r.round_id) === String(stop10RoundId) &&
+        r.player_id === joinedPlayer.id
+    ) || null
+  );
+}, [stop10Results, stop10RoundId, joinedPlayer?.id]);
+
+/* ===== HOST TIMER ===== */
+
+const hostDisplayedTime = useMemo(() => {
+  if (effectivePhase === "countdown") return countdownTimeLeft;
+  if (effectivePhase === "question") return localTimeLeft;
+
+  if (effectivePhase === "stop10") {
+    return Math.max(0, Math.ceil((10000 - stop10ElapsedMs) / 1000));
+  }
+
+  return 0;
+}, [effectivePhase, countdownTimeLeft, localTimeLeft, stop10ElapsedMs]);
+
+/* ===== DOMANDA ===== */
+
+const currentQuestion = useMemo(() => {
+  if (!game || questions.length === 0) return null;
+
+  return (
+    questions.find((q) => q.position === game.current_question_index) || null
+  );
+}, [game, questions]);
+
+const currentQuestionAnswers = useMemo(() => {
+  if (!currentQuestion?.id) return [];
+
+  return answers.filter((a) => a.question_id === currentQuestion.id);
+}, [answers, currentQuestion?.id]);
+
+/* ===== STATS ===== */
+
+const answerStats = useMemo(() => {
+  const countA = currentQuestionAnswers.filter((a) => a.answer === "A").length;
+  const countB = currentQuestionAnswers.filter((a) => a.answer === "B").length;
+  const countC = currentQuestionAnswers.filter((a) => a.answer === "C").length;
+  const countD = currentQuestionAnswers.filter((a) => a.answer === "D").length;
+
+  const totalAnswered = currentQuestionAnswers.length;
+  const totalPlayers = players.length;
+
+  const percent = (value) =>
+    totalAnswered > 0 ? Math.round((value / totalAnswered) * 100) : 0;
+
+  return {
+    totalAnswered,
+    totalPlayers,
+    A: { count: countA, percent: percent(countA) },
+    B: { count: countB, percent: percent(countB) },
+    C: { count: countC, percent: percent(countC) },
+    D: { count: countD, percent: percent(countD) },
+  };
+}, [currentQuestionAnswers, players.length]);
+
+/* ===== JOLLY TV ===== */
+
+const jollyQuestionDetails = useMemo(() => {
+  if (!currentQuestion?.id) return [];
+
+  const questionAnswers = answers.filter(
+    (a) => a.question_id === currentQuestion.id
   );
 
-  const hostDisplayedTime = useMemo(() => {
-    if (effectivePhase === "countdown") return countdownTimeLeft;
-    if (effectivePhase === "question") return localTimeLeft;
-    return 0;
-  }, [effectivePhase, countdownTimeLeft, localTimeLeft]);
+  const jollyAnswers = questionAnswers.filter((a) => a.is_jolly === true);
+  if (!jollyAnswers.length) return [];
 
-  const currentQuestion = useMemo(() => {
-    if (!game || questions.length === 0) return null;
-    return questions.find((q) => q.position === game.current_question_index) || null;
-  }, [game, questions]);
+  const normalCorrectAnswers = questionAnswers.filter(
+    (a) => a.is_correct === true && a.is_jolly !== true
+  );
 
-  const currentQuestionAnswers = useMemo(() => {
-    if (!currentQuestion?.id) return [];
-    return answers.filter((a) => a.question_id === currentQuestion.id);
-  }, [answers, currentQuestion?.id]);
+  const normalCorrectScores = normalCorrectAnswers
+    .map((a) => Number(a.score_awarded || 0))
+    .filter((score) => score > 100);
 
-  const answerStats = useMemo(() => {
-    const countA = currentQuestionAnswers.filter((a) => a.answer === "A").length;
-    const countB = currentQuestionAnswers.filter((a) => a.answer === "B").length;
-    const countC = currentQuestionAnswers.filter((a) => a.answer === "C").length;
-    const countD = currentQuestionAnswers.filter((a) => a.answer === "D").length;
+  const bestTimeBonus =
+    normalCorrectScores.length > 0
+      ? Math.max(...normalCorrectScores) - 100
+      : 100;
 
-    const totalAnswered = currentQuestionAnswers.length;
-    const totalPlayers = players.length;
+  const sourceText =
+    normalCorrectScores.length > 0
+      ? "miglior risposta corretta"
+      : "bonus massimo";
 
-    const percent = (value) => (totalAnswered > 0 ? Math.round((value / totalAnswered) * 100) : 0);
+  return jollyAnswers.map((answer) => {
+    const player = players.find((p) => p.id === answer.player_id);
 
     return {
-      totalAnswered,
-      totalPlayers,
-      A: { count: countA, percent: percent(countA) },
-      B: { count: countB, percent: percent(countB) },
-      C: { count: countC, percent: percent(countC) },
-      D: { count: countD, percent: percent(countD) },
+      playerId: answer.player_id,
+      playerName: player?.name || "Giocatore",
+      totalPoints: 100 + bestTimeBonus,
+      bonusPoints: bestTimeBonus,
+      sourceText,
     };
-  }, [currentQuestionAnswers, players.length]);
+  });
+}, [answers, players, currentQuestion?.id]);
 
-  const jollyQuestionDetails = useMemo(() => {
-    if (!currentQuestion?.id) return [];
+/* ===== CLASSIFICHE TV ===== */
 
-    const playerById = new Map(players.map((p) => [p.id, p]));
+const sortedPlayers = useMemo(() => {
+  return [...players].sort((a, b) => {
+    const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+    if (scoreDiff !== 0) return scoreDiff;
 
-    const normalCorrectAnswers = currentQuestionAnswers.filter(
-      (a) => a.is_correct === true && a.is_jolly !== true
-    );
+    return (a.name || "").localeCompare(b.name || "", "it", {
+      sensitivity: "base",
+    });
+  });
+}, [players]);
 
-    const bestNormalCorrect = normalCorrectAnswers
-      .map((a) => {
-        const total = Number(a.score_awarded || 0);
+const podiumPlayers = useMemo(() => {
+  return sortedPlayers.slice(0, 3);
+}, [sortedPlayers]);
 
-        return {
-          ...a,
-          totalPoints: total,
-          bonusPoints: Math.max(0, total - 100),
-          playerName: playerById.get(a.player_id)?.name || "un giocatore",
-        };
-      })
-      .sort((a, b) => b.bonusPoints - a.bonusPoints)[0];
+/* ===== LAYOUT LOBBY TV ===== */
 
-    return currentQuestionAnswers
-      .filter((a) => a.is_jolly === true)
-      .map((a) => {
-        const totalPoints = Number(a.score_awarded || 0);
-        const bonusPoints = Math.max(0, totalPoints - 100);
+const tvQrSize = useMemo(() => {
+  const count = players.length;
 
-        return {
-          playerId: a.player_id,
-          playerName: playerById.get(a.player_id)?.name || "Giocatore",
-          totalPoints,
-          bonusPoints,
-          sourceText: bestNormalCorrect ? bestNormalCorrect.playerName : "bonus massimo",
-        };
-      });
-  }, [currentQuestion?.id, currentQuestionAnswers, players]);
+  if (count >= 30) return 210;
+  if (count >= 20) return 240;
+  if (count >= 12) return 270;
+  return 300;
+}, [players.length]);
 
-  const podiumPlayers = useMemo(
-    () => [...players].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3),
-    [players]
-  );
+const tvLobbyPlayerColumns = useMemo(() => {
+  const count = players.length;
 
-  const tvLobbyPlayerColumns = useMemo(() => {
-    if (players.length <= 8) return 1;
-    if (players.length <= 18) return 2;
-    return 3;
-  }, [players.length]);
+  if (count >= 36) return 4;
+  if (count >= 18) return 3;
+  if (count >= 8) return 2;
+  return 1;
+}, [players.length]);
 
-  const tvLobbyPlayerFontSize = useMemo(() => {
-    if (players.length <= 8) return 28;
-    if (players.length <= 14) return 24;
-    if (players.length <= 22) return 20;
-    return 17;
-  }, [players.length]);
+const tvLobbyPlayerFontSize = useMemo(() => {
+  const count = players.length;
 
-  const tvLobbyPlayerPadding = useMemo(() => {
-    if (players.length <= 10) return "14px 18px";
-    if (players.length <= 20) return "10px 14px";
-    return "8px 12px";
-  }, [players.length]);
+  if (count >= 36) return 18;
+  if (count >= 24) return 20;
+  if (count >= 14) return 22;
+  return 26;
+}, [players.length]);
 
-  const tvQrSize = useMemo(() => {
-    if (players.length <= 4) return 130;
-    if (players.length <= 10) return 120;
-    return 110;
-  }, [players.length]);
+const tvLobbyPlayerPadding = useMemo(() => {
+  const count = players.length;
+
+  if (count >= 30) return "8px 10px";
+  if (count >= 18) return "10px 12px";
+  return "12px 14px";
+}, [players.length]);
 
 /* =====================================================
-   PARTE 5 - CARICAMENTO DATI, GAME SETUP, EVENTI E IMPORT CSV
+   PARTE 5A - CARICAMENTO DATI BASE
 ===================================================== */
 
 function normalizeQuestionTime() {
@@ -735,6 +865,8 @@ async function getOrCreateGame() {
         question_started_at: null,
         question_duration: null,
         show_leaderboard: false,
+        stop10_round_id: null,
+        stop10_started_at_ms: null,
       },
     ])
     .select()
@@ -778,6 +910,7 @@ async function addLiveEvent(gameId, eventType, eventText, playerNameValue = null
       event_text: eventText,
     },
   ]);
+
   if (error) throw error;
 }
 
@@ -789,6 +922,7 @@ async function loadGameOnly() {
 
 async function loadQuestionsOnly(gameId) {
   if (!gameId) return [];
+
   const { data, error } = await supabase
     .from("questions")
     .select("*")
@@ -796,12 +930,14 @@ async function loadQuestionsOnly(gameId) {
     .order("position");
 
   if (error) throw error;
+
   setQuestions(data || []);
   return data || [];
 }
 
 async function loadPlayersOnly(gameId) {
   if (!gameId) return [];
+
   const { data, error } = await supabase
     .from("players")
     .select("*")
@@ -820,6 +956,7 @@ async function loadPlayersOnly(gameId) {
 
   if (joinedPlayer?.id) {
     const updatedJoined = sortedPlayers.find((p) => p.id === joinedPlayer.id) || null;
+
     if (updatedJoined) {
       setJoinedPlayer(updatedJoined);
       setJollyUsed(Boolean(updatedJoined.jolly_used));
@@ -831,14 +968,35 @@ async function loadPlayersOnly(gameId) {
 
 async function loadAnswersOnly(gameId) {
   if (!gameId) return [];
-  const { data, error } = await supabase.from("answers").select("*").eq("game_id", gameId);
+
+  const { data, error } = await supabase
+    .from("answers")
+    .select("*")
+    .eq("game_id", gameId);
+
   if (error) throw error;
+
   setAnswers(data || []);
+  return data || [];
+}
+
+async function loadStop10ResultsOnly(gameId) {
+  if (!gameId) return [];
+
+  const { data, error } = await supabase
+    .from("stop10_results")
+    .select("*")
+    .eq("game_id", gameId);
+
+  if (error) throw error;
+
+  setStop10Results(data || []);
   return data || [];
 }
 
 async function loadEventsOnly(gameId) {
   if (!gameId) return [];
+
   const { data, error } = await supabase
     .from("live_events")
     .select("*")
@@ -859,12 +1017,14 @@ async function loadEventsOnly(gameId) {
 async function loadAll({ silent = false } = {}) {
   try {
     if (!silent) setIsLoading(true);
+
     const g = await loadGameOnly();
 
     await Promise.all([
       loadQuestionsOnly(g.id),
       loadPlayersOnly(g.id),
       loadAnswersOnly(g.id),
+      loadStop10ResultsOnly(g.id),
       loadEventsOnly(g.id),
     ]);
 
@@ -876,6 +1036,10 @@ async function loadAll({ silent = false } = {}) {
     if (!silent) setIsLoading(false);
   }
 }
+
+/* =====================================================
+   PARTE 5B - IMPORT CSV E NORMALIZZAZIONE
+===================================================== */
 
 function normalizeCsvRows(rows) {
   return rows
@@ -906,8 +1070,6 @@ function normalizeCsvRows(rows) {
         explanation: String(row.explanation || "").trim(),
         time_limit: COUNTDOWN_DURATION,
         points: Number(row.points || 100),
-
-        // 🔥 QUESTO È IL FIX
         image_url: String(row.image_url || "").trim(),
         audio_url: String(row.audio_url || "").trim(),
         video_url: String(row.video_url || "").trim(),
@@ -918,6 +1080,7 @@ function normalizeCsvRows(rows) {
 
 async function importCsvQuestions(file) {
   if (!file || !game) return;
+
   setStatus("Import CSV in corso...");
 
   Papa.parse(file, {
@@ -954,6 +1117,8 @@ async function importCsvQuestions(file) {
             question_started_at: null,
             question_duration: null,
             show_leaderboard: false,
+            stop10_round_id: null,
+            stop10_started_at_ms: null,
           })
           .eq("id", game.id);
 
@@ -966,9 +1131,16 @@ async function importCsvQuestions(file) {
         setSelectedAnswer(null);
         setJollyUsed(false);
         setFinalRevealIndex(-1);
+        setStop10Results([]);
+        setStop10PlayerStopped(false);
+        setStop10PlayerResult(null);
+        setStop10TvEffect(null);
+
         submitLockRef.current = false;
         jollyLockRef.current = false;
+        stop10LockRef.current = false;
         phaseSwitchInFlightRef.current = false;
+
         setAnswers([]);
 
         await loadAll();
@@ -1397,6 +1569,7 @@ async function importCsvQuestions(file) {
       await supabase.from("players").delete().eq("game_id", game.id);
       await supabase.from("questions").delete().eq("game_id", game.id);
       await supabase.from("live_events").delete().eq("game_id", game.id);
+      await supabase.from("stop10_results").delete().eq("game_id", game.id);
 
       const { data, error } = await supabase
         .from("games")
@@ -1409,6 +1582,8 @@ async function importCsvQuestions(file) {
           question_started_at: null,
           question_duration: null,
           show_leaderboard: false,
+          stop10_round_id: null,
+          stop10_started_at_ms: null,
         })
         .eq("id", game.id)
         .select()
@@ -1422,12 +1597,19 @@ async function importCsvQuestions(file) {
       setPlayers([]);
       setQuestions([]);
       setAnswers([]);
+      setStop10Results([]);
+      setStop10PlayerStopped(false);
+      setStop10PlayerResult(null);
+      setStop10TvEffect(null);
       setLiveEvents([]);
       setFinalRevealIndex(-1);
       setRoundName("");
+
       submitLockRef.current = false;
       jollyLockRef.current = false;
+      stop10LockRef.current = false;
       phaseSwitchInFlightRef.current = false;
+
       setGame(data);
       setTvAudioReady(false);
       setHideTvAudioOverlay(false);
@@ -1440,7 +1622,7 @@ async function importCsvQuestions(file) {
       setStatus("Errore reset: " + error.message);
     }
   }
-
+  
   /* =========================
      6.7 - Mostra/nascondi classifica TV
   ========================= */
@@ -1645,6 +1827,216 @@ async function importCsvQuestions(file) {
     }
   }
 
+    /* =========================
+     6.10 - Minigioco STOP 10: avvio host
+  ========================= */
+
+  async function startStop10Game() {
+    if (!game?.id) return;
+
+    const roundId = Date.now();
+    const startedAtMs = Math.round(syncedNowRef.current);
+
+    try {
+      await supabase.from("stop10_results").delete().eq("game_id", game.id);
+
+      const { data, error } = await supabase
+        .from("games")
+        .update({
+          phase: "stop10",
+          stop10_round_id: roundId,
+          stop10_started_at_ms: startedAtMs,
+          countdown_started_at_ms: null,
+          question_started_at_ms: null,
+          question_started_at: null,
+          question_duration: null,
+          time_left: 0,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await addLiveEvent(game.id, "stop10_start", "⏱️ PARTITO IL MINIGIOCO STOP 10!");
+
+      setGame(data);
+      setStop10Results([]);
+      setStop10PlayerStopped(false);
+      setStop10PlayerResult(null);
+      stop10LockRef.current = false;
+
+      setStatus("Stop10 avviato");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore avvio Stop10: " + error.message);
+    }
+  }
+
+  /* =========================
+     6.11 - Minigioco STOP 10: stop player
+  ========================= */
+
+  async function stop10SubmitStop() {
+    if (!game?.id || !joinedPlayer?.id) return;
+    if (!stop10RoundId) return;
+    if (stop10LockRef.current) return;
+    if (effectivePhase !== "stop10") return;
+    if (!Number.isFinite(stop10StartedAtMs)) return;
+    if (myStop10Result || stop10PlayerStopped) return;
+
+    const stoppedMs = Math.max(0, Math.round(syncedNowRef.current - stop10StartedAtMs));
+
+    if (stoppedMs > 10000) {
+      setStatus("Tempo scaduto");
+      return;
+    }
+
+    try {
+      stop10LockRef.current = true;
+
+      const diffMs = Math.abs(10000 - stoppedMs);
+
+      const { data, error } = await supabase
+        .from("stop10_results")
+        .insert([
+          {
+            game_id: game.id,
+            player_id: joinedPlayer.id,
+            player_name: joinedPlayer.name,
+            round_id: stop10RoundId,
+            stopped_ms: stoppedMs,
+            diff_ms: diffMs,
+            score_awarded: 0,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setStop10PlayerStopped(true);
+      setStop10PlayerResult(data);
+      setStatus(`STOP registrato: ${(stoppedMs / 1000).toFixed(2)}s`);
+
+      await loadStop10ResultsOnly(game.id);
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore STOP 10: " + error.message);
+    } finally {
+      stop10LockRef.current = false;
+    }
+  }
+
+  /* =========================
+     6.12 - Minigioco STOP 10: chiusura e punteggi
+  ========================= */
+
+  async function finishStop10Game() {
+    if (!game?.id) return;
+    if (!stop10RoundId) {
+      setStatus("Nessuno Stop10 attivo");
+      return;
+    }
+
+    try {
+      const { data: freshGame, error: gameError } = await supabase
+        .from("games")
+        .select("*")
+        .eq("id", game.id)
+        .single();
+
+      if (gameError) throw gameError;
+
+      if (freshGame.phase !== "stop10") {
+        setStatus("Lo Stop10 non è in corso oppure è già stato chiuso");
+        return;
+      }
+
+      const { data: resultsData, error: resultsError } = await supabase
+        .from("stop10_results")
+        .select("*")
+        .eq("game_id", game.id)
+        .eq("round_id", stop10RoundId);
+
+      if (resultsError) throw resultsError;
+
+      const validResults = (resultsData || [])
+        .filter((r) => {
+          const stoppedMs = Number(r.stopped_ms || 0);
+          return stoppedMs > 0 && stoppedMs <= 10000;
+        })
+        .sort((a, b) => {
+          const diff = Number(a.diff_ms || 0) - Number(b.diff_ms || 0);
+          if (diff !== 0) return diff;
+          return Number(b.stopped_ms || 0) - Number(a.stopped_ms || 0);
+        });
+
+      const pointsByPosition = [200, 150, 100, 70, 50];
+
+      for (let index = 0; index < validResults.length; index += 1) {
+        const result = validResults[index];
+        const points = pointsByPosition[index] || 30;
+
+        const { data: player, error: playerError } = await supabase
+          .from("players")
+          .select("id, score")
+          .eq("id", result.player_id)
+          .single();
+
+        if (playerError) throw playerError;
+
+        const newScore = Number(player.score || 0) + points;
+
+        const { error: updatePlayerError } = await supabase
+          .from("players")
+          .update({ score: newScore })
+          .eq("id", result.player_id);
+
+        if (updatePlayerError) throw updatePlayerError;
+
+        const { error: updateResultError } = await supabase
+          .from("stop10_results")
+          .update({ score_awarded: points })
+          .eq("id", result.id);
+
+        if (updateResultError) throw updateResultError;
+      }
+
+      const { data: updatedGame, error: updateGameError } = await supabase
+        .from("games")
+        .update({
+          phase: "stop10_results",
+          time_left: 0,
+          show_leaderboard: false,
+        })
+        .eq("id", game.id)
+        .select()
+        .single();
+
+      if (updateGameError) throw updateGameError;
+
+      await addLiveEvent(
+        game.id,
+        "stop10_results",
+        `🏆 Stop10 concluso! Assegnati punti a ${validResults.length} giocatori`
+      );
+
+      setGame(updatedGame);
+
+      await Promise.all([
+        loadPlayersOnly(game.id),
+        loadStop10ResultsOnly(game.id),
+        loadEventsOnly(game.id),
+      ]);
+
+      setStatus("Stop10 concluso: punti assegnati");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore chiusura Stop10: " + error.message);
+    }
+  }
 
 /* =====================================================
    PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
@@ -1761,6 +2153,7 @@ useEffect(() => {
 }, []);
 
 
+
 /* =========================
    7.3 - Realtime Supabase
 ========================= */
@@ -1792,6 +2185,7 @@ useEffect(() => {
         loadQuestionsOnly(game.id),
         loadPlayersOnly(game.id),
         loadAnswersOnly(game.id),
+        loadStop10ResultsOnly(game.id),
         loadEventsOnly(game.id),
       ]);
     } catch (error) {
@@ -1803,7 +2197,8 @@ useEffect(() => {
     .channel(`quiz-live-${game.id}`)
 
     /* games */
-    .on("postgres_changes",
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "games", filter: `id=eq.${game.id}` },
       async (payload) => {
         if (payload?.new) setGame(payload.new);
@@ -1812,37 +2207,40 @@ useEffect(() => {
     )
 
     /* players */
-    .on("postgres_changes",
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "players", filter: `game_id=eq.${game.id}` },
       async (payload) => {
         const { eventType, new: newRow, old: oldRow } = payload;
 
         if (eventType === "INSERT" && newRow) {
-          setPlayers(prev =>
-            sortPlayersRealtime([...prev.filter(p => p.id !== newRow.id), newRow])
+          setPlayers((prev) =>
+            sortPlayersRealtime([...prev.filter((p) => p.id !== newRow.id), newRow])
           );
           return;
         }
 
         if (eventType === "UPDATE" && newRow) {
-          setPlayers(prev =>
-            sortPlayersRealtime(prev.map(p => (p.id === newRow.id ? newRow : p)))
+          setPlayers((prev) =>
+            sortPlayersRealtime(prev.map((p) => (p.id === newRow.id ? newRow : p)))
           );
 
           if (joinedPlayer?.id === newRow.id) {
             setJoinedPlayer(newRow);
             setJollyUsed(Boolean(newRow.jolly_used));
           }
+
           return;
         }
 
         if (eventType === "DELETE" && oldRow) {
-          setPlayers(prev => prev.filter(p => p.id !== oldRow.id));
+          setPlayers((prev) => prev.filter((p) => p.id !== oldRow.id));
 
           if (joinedPlayer?.id === oldRow.id) {
             setJoinedPlayer(null);
             setJollyUsed(false);
           }
+
           return;
         }
 
@@ -1851,7 +2249,8 @@ useEffect(() => {
     )
 
     /* questions */
-    .on("postgres_changes",
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "questions", filter: `game_id=eq.${game.id}` },
       async () => {
         await loadQuestionsOnly(game.id);
@@ -1859,35 +2258,46 @@ useEffect(() => {
     )
 
     /* answers */
-    .on("postgres_changes",
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "answers", filter: `game_id=eq.${game.id}` },
       async () => {
         await loadAnswersOnly(game.id);
       }
     )
 
+    /* stop10_results */
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "stop10_results", filter: `game_id=eq.${game.id}` },
+      async () => {
+        await loadStop10ResultsOnly(game.id);
+      }
+    )
+
     /* events */
-    .on("postgres_changes",
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "live_events", filter: `game_id=eq.${game.id}` },
       async (payload) => {
         const { eventType, new: newRow, old: oldRow } = payload;
 
         if (eventType === "INSERT" && newRow) {
-          setLiveEvents(prev =>
-            sortEventsRealtime([newRow, ...prev.filter(e => e.id !== newRow.id)])
+          setLiveEvents((prev) =>
+            sortEventsRealtime([newRow, ...prev.filter((e) => e.id !== newRow.id)])
           );
           return;
         }
 
         if (eventType === "UPDATE" && newRow) {
-          setLiveEvents(prev =>
-            sortEventsRealtime(prev.map(e => (e.id === newRow.id ? newRow : e)))
+          setLiveEvents((prev) =>
+            sortEventsRealtime(prev.map((e) => (e.id === newRow.id ? newRow : e)))
           );
           return;
         }
 
         if (eventType === "DELETE" && oldRow) {
-          setLiveEvents(prev => prev.filter(e => e.id !== oldRow.id));
+          setLiveEvents((prev) => prev.filter((e) => e.id !== oldRow.id));
           return;
         }
 
@@ -1911,7 +2321,6 @@ useEffect(() => {
   };
 }, [game?.id, joinedPlayer?.id]);
 
-
 /* =========================
    7.4 - Refresh fallback
 ========================= */
@@ -1929,6 +2338,7 @@ useEffect(() => {
     loadQuestionsOnly(game.id).catch(() => {});
     loadPlayersOnly(game.id).catch(() => {});
     loadAnswersOnly(game.id).catch(() => {});
+    loadStop10ResultsOnly(game.id).catch(() => {}); // 👈 AGGIUNTO
     loadEventsOnly(game.id).catch(() => {});
   }, 3000);
 
@@ -1939,7 +2349,6 @@ useEffect(() => {
     }
   };
 }, [game?.id]);
-
 
 /* =========================
    7.5 - Refresh visibilità pagina
@@ -2374,6 +2783,41 @@ useEffect(() => {
 }, [game?.phase]);
 
 /* =========================
+   7.17B - Reveal progressivo classifica provvisoria TV
+========================= */
+
+useEffect(() => {
+  if (role !== "tv") return;
+
+  if (!game?.show_leaderboard || game?.phase === "final") {
+    setLeaderboardRevealCount(0);
+    return;
+  }
+
+  const totalPlayers = players.length;
+
+  if (totalPlayers <= 0) {
+    setLeaderboardRevealCount(0);
+    return;
+  }
+
+  setLeaderboardRevealCount(1);
+
+  const interval = setInterval(() => {
+    setLeaderboardRevealCount((current) => {
+      if (current >= totalPlayers) {
+        clearInterval(interval);
+        return current;
+      }
+
+      return current + 1;
+    });
+  }, 3000);
+
+  return () => clearInterval(interval);
+}, [role, game?.show_leaderboard, game?.phase, players.length]);
+
+/* =========================
    7.18 - AUTOSCALE PLAYER
 ========================= */
 
@@ -2382,6 +2826,7 @@ useEffect(() => {
 
   if (effectivePhase !== "question") {
     setPlayerQuestionScale(1);
+    setPlayerQuestionFitReady(false);
     return;
   }
 
@@ -2392,18 +2837,31 @@ useEffect(() => {
 
   let frameId = null;
 
+  setPlayerQuestionFitReady(false);
+
   const fitPlayerQuestion = () => {
     inner.style.transform = "scale(1)";
     inner.style.width = "100%";
 
-    let scale = 1;
+    const outerHeight = outer.clientHeight;
+    const innerHeight = inner.scrollHeight;
 
-    while (inner.scrollHeight > outer.clientHeight && scale > 0.68) {
-      scale -= 0.04;
-      inner.style.transform = `scale(${scale})`;
+    if (!outerHeight || !innerHeight) {
+      setPlayerQuestionScale(1);
+      setPlayerQuestionFitReady(true);
+      return;
     }
 
+    let scale = 1;
+
+    while (innerHeight * scale > outerHeight && scale > 0.78) {
+      scale -= 0.02;
+    }
+
+    scale = Math.max(0.78, Math.min(1, scale));
+
     setPlayerQuestionScale(scale);
+    setPlayerQuestionFitReady(true);
   };
 
   const requestFit = () => {
@@ -2413,9 +2871,9 @@ useEffect(() => {
 
   requestFit();
 
-  const timeout1 = setTimeout(requestFit, 50);
-  const timeout2 = setTimeout(requestFit, 150);
-  const timeout3 = setTimeout(requestFit, 350);
+  const timeout1 = setTimeout(requestFit, 40);
+  const timeout2 = setTimeout(requestFit, 120);
+  const timeout3 = setTimeout(requestFit, 260);
 
   window.addEventListener("resize", requestFit);
   window.addEventListener("orientationchange", requestFit);
@@ -2442,6 +2900,18 @@ useEffect(() => {
   localTimeLeft,
   selectedAnswer,
 ]);
+
+/* =========================
+   7.19 - Reset stato Stop10
+========================= */
+
+useEffect(() => {
+  if (!game?.stop10_round_id) return;
+
+  setStop10PlayerStopped(false);
+  setStop10PlayerResult(null);
+  stop10LockRef.current = false;
+}, [game?.stop10_round_id]);
 
 /* =====================================================
    PARTE 8 - STILI LOCALI E FUNZIONI RENDER
@@ -3170,6 +3640,99 @@ if (role === "player") {
           )}
         </div>
 
+                {/* =========================
+           9.5B - Minigioco STOP 10 PLAYER
+        ========================= */}
+
+        {effectivePhase === "stop10" && (
+          <div style={{ ...panelStyle, textAlign: "center" }}>
+            <h2 style={{ fontSize: 34, marginBottom: 12 }}>
+              ⏱️ STOP ALLO ZERO
+            </h2>
+
+            <p style={{ fontSize: 18, opacity: 0.9, marginBottom: 18 }}>
+              Premi STOP il più vicino possibile allo zero.
+              <br />
+              A 3 secondi il timer sparisce.
+            </p>
+
+            {!stop10HideTimer ? (
+              <div
+                style={{
+                  fontSize: 76,
+                  fontWeight: "bold",
+                  color: GOLD,
+                  marginBottom: 22,
+                  animation: "pulseTime 1s infinite",
+                }}
+              >
+                {Math.max(0, (10 - stop10ElapsedSeconds)).toFixed(1)}
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 38,
+                  fontWeight: "bold",
+                  color: GOLD,
+                  marginBottom: 22,
+                }}
+              >
+                TIMER NASCOSTO
+              </div>
+            )}
+
+            {myStop10Result || stop10PlayerResult ? (
+              <div
+                style={{
+                  padding: 18,
+                  borderRadius: 18,
+                  background: "rgba(34,197,94,0.16)",
+                  border: "1px solid rgba(34,197,94,0.45)",
+                  fontWeight: "bold",
+                  fontSize: 22,
+                }}
+              >
+                ✅ STOP registrato
+                <div style={{ marginTop: 10, color: GOLD }}>
+                  Mancavano{" "}
+                  {Math.max(
+                    0,
+                    (10000 - Number((myStop10Result || stop10PlayerResult).stopped_ms || 0)) / 1000
+                  ).toFixed(2)}
+                  s
+                </div>
+              </div>
+            ) : stop10ElapsedMs >= 10000 ? (
+              <div
+                style={{
+                  padding: 18,
+                  borderRadius: 18,
+                  background: "rgba(239,68,68,0.16)",
+                  border: "1px solid rgba(239,68,68,0.45)",
+                  fontWeight: "bold",
+                  fontSize: 22,
+                }}
+              >
+                ⛔ Tempo scaduto
+              </div>
+            ) : (
+              <button
+                onClick={stop10SubmitStop}
+                disabled={stop10PlayerStopped || stop10LockRef.current}
+                style={{
+                  ...buttonStyle,
+                  width: "100%",
+                  maxWidth: 360,
+                  fontSize: 30,
+                  padding: "22px 26px",
+                  background: "linear-gradient(135deg, #ef4444 0%, #991b1b 100%)",
+                }}
+              >
+                STOP
+              </button>
+            )}
+          </div>
+        )}
 
         {/* =========================
            9.6 - Lobby PLAYER
@@ -3204,160 +3767,92 @@ if (role === "player") {
           </div>
         )}
 
-{/* =========================
-   9.8 - Domanda PLAYER
-========================= */}
+        {/* =========================
+           9.8 - PLAYER - DOMANDA
+        ========================= */}
 
-{effectivePhase === "question" && currentQuestion && (
-  <div
-    ref={playerQuestionOuterRef}
-    style={{
-      height: "calc(100dvh - 150px)",
-      minHeight: 0,
-      overflow: "hidden",
-    }}
-  >
-    <div
-      ref={playerQuestionInnerRef}
-      style={{
-        ...panelStyle,
-        textAlign: "center",
-        padding: "10px 10px",
-        transform: `scale(${playerQuestionScale})`,
-        transformOrigin: "top center",
-        transition: "transform 0.12s ease",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "clamp(20px, 5vw, 28px)",
-          fontWeight: "bold",
-          marginBottom: 6,
-          color: localTimeLeft <= 5 ? GOLD : "white",
-          animation:
-            localTimeLeft <= 5 && localTimeLeft > 0 ? "pulseTime 1s infinite" : "none",
-          lineHeight: 1,
-        }}
-      >
-        ⏳ {localTimeLeft}s
-      </div>
-
-      {playerMediaHint && (
-        <div
-          style={{
-            ...playerHintStyle,
-            marginBottom: 6,
-            padding: "6px 12px",
-            fontSize: "clamp(12px, 3.2vw, 15px)",
-          }}
-        >
-          {playerMediaHint}
-        </div>
-      )}
-
-      {renderQuestionMedia(currentQuestion, "player")}
-
-      <h2
-        style={{
-          fontSize: "clamp(15px, 3.8vw, 20px)",
-          lineHeight: 1.1,
-          margin: "0 0 8px",
-          wordBreak: "break-word",
-          overflowWrap: "anywhere",
-        }}
-      >
-        {currentQuestion.question}
-      </h2>
-
-      <div
-        style={{
-          display: "grid",
-          gap: 7,
-          maxWidth: 520,
-          margin: "0 auto",
-          width: "100%",
-        }}
-      >
-        {["A", "B", "C", "D"].map((letter) => {
-          const text =
-            letter === "A"
-              ? currentQuestion.option_a
-              : letter === "B"
-              ? currentQuestion.option_b
-              : letter === "C"
-              ? currentQuestion.option_c
-              : currentQuestion.option_d;
-
-          if (!text) return null;
-
-          const len = String(text).length;
-
-          return (
-            <button
-              key={letter}
-              onClick={() => submitAnswer(letter)}
-              disabled={!!selectedAnswer || localTimeLeft <= 0}
+        {effectivePhase === "question" && currentQuestion && (
+          <div
+            ref={playerQuestionOuterRef}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: APP_BG,
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+              overflow: "hidden",
+              padding: "10px",
+              boxSizing: "border-box",
+              zIndex: 50,
+            }}
+          >
+            <div
+              ref={playerQuestionInnerRef}
               style={{
-                ...getPlayerAnswerButtonStyle(
-                  letter,
-                  !!selectedAnswer || localTimeLeft <= 0,
-                  selectedAnswer === letter
-                ),
+                ...panelStyle,
                 width: "100%",
-                minHeight: 48,
-                padding: "9px 11px",
-                fontSize:
-                  len > 42
-                    ? "clamp(11px, 2.9vw, 14px)"
-                    : len > 26
-                    ? "clamp(12px, 3.2vw, 15px)"
-                    : "clamp(14px, 3.6vw, 17px)",
-                lineHeight: 1.1,
-                whiteSpace: "normal",
-                wordBreak: "break-word",
-                overflowWrap: "anywhere",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
+                maxWidth: "700px",
+                textAlign: "center",
+                padding: "10px",
+                transform: `scale(${playerQuestionScale})`,
+                opacity: playerQuestionFitReady ? 1 : 0,
+                transformOrigin: "top center",
+                transition: "opacity 0.06s ease",
                 boxSizing: "border-box",
               }}
             >
-              {letter} - {text}
-            </button>
-          );
-        })}
-      </div>
+              <div style={{ fontSize: 18, marginBottom: 8 }}>
+                ⏱ {Math.max(0, localTimeLeft)}s
+              </div>
 
-      {selectedAnswer && (
-        <p
-          style={{
-            margin: "7px 0 0",
-            color: GOLD,
-            fontWeight: "bold",
-            fontSize: "clamp(12px, 3vw, 14px)",
-          }}
-        >
-          Hai risposto: {selectedAnswer}
-        </p>
-      )}
+              <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
+                {currentQuestion.question}
+              </div>
 
-      {!selectedAnswer && localTimeLeft <= 0 && (
-        <p
-          style={{
-            margin: "7px 0 0",
-            color: RED,
-            fontWeight: "bold",
-            fontSize: "clamp(12px, 3vw, 14px)",
-          }}
-        >
-          Tempo scaduto
-        </p>
-      )}
-    </div>
-  </div>
-)}
+              {currentQuestion.image_url && (
+                <img
+                  src={currentQuestion.image_url}
+                  alt="Immagine domanda"
+                  style={{
+                    width: "100%",
+                    maxHeight: "40vh",
+                    objectFit: "contain",
+                    marginBottom: 8,
+                    borderRadius: 10,
+                  }}
+                />
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {["A", "B", "C", "D"].map((letter) => {
+                  const text = currentQuestion[`option_${letter.toLowerCase()}`];
+                  if (!text) return null;
+
+                  return (
+                    <button
+                      key={letter}
+                      onClick={() => submitAnswer(letter)}
+                      disabled={!!selectedAnswer}
+                      style={{
+                        ...getPlayerAnswerButtonStyle(
+                          letter,
+                          !!selectedAnswer,
+                          selectedAnswer === letter
+                        ),
+                        padding: "10px",
+                        fontSize: 16,
+                        borderRadius: 10,
+                      }}
+                    >
+                      {letter}) {text}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
        
         {/* =========================
    9.9 - Stats / Reveal / Finale PLAYER
@@ -3810,120 +4305,213 @@ if (role === "tv") {
         </div>
       )}
 
+{/* =========================
+   10.8 - TV STOP10 RISULTATI (FIX DEFINITIVO)
+========================= */}
 
-      {/* =========================
-         10.8 - Overlay effetti speciali TV
-      ========================= */}
+{effectivePhase === "stop10_results" && !Boolean(game?.show_leaderboard) && (() => {
+  const sorted = [...(stop10Results || [])].sort(
+    (a, b) => Number(a.diff_ms || 0) - Number(b.diff_ms || 0)
+  );
 
-      {tvJollyEffect && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(255,213,79,0.22)",
-            zIndex: 9999,
-            pointerEvents: "none",
-          }}
-        >
-          <div
-            style={{
-              ...panelStyle,
-              width: "min(950px, 92vw)",
-              textAlign: "center",
-              border: "3px solid rgba(255,213,79,0.95)",
-              background: "rgba(255,213,79,0.20)",
-              animation: "answerFlashPop 0.25s ease",
-              boxShadow: "0 0 50px rgba(255,213,79,0.45)",
-            }}
-          >
-            <div style={{ fontSize: 90, marginBottom: 12 }}>🃏</div>
-            <div style={{ fontSize: 58, fontWeight: "bold", color: GOLD, marginBottom: 12 }}>
-              JOLLY ATTIVATO
-            </div>
-            <div style={{ fontSize: 30, lineHeight: 1.35 }}>{tvJollyEffect.text}</div>
-          </div>
-        </div>
-      )}
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "radial-gradient(circle at center, #020617 0%, #000 100%)",
+        color: "white",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        zIndex: 9996,
+      }}
+    >
+      {/* TITOLO */}
+      <div
+        style={{
+          fontSize: 60,
+          fontWeight: "bold",
+          marginBottom: 40,
+          textShadow: "0 0 20px rgba(255,255,255,0.3)",
+        }}
+      >
+        ⏱ STOP A 10 SECONDI
+      </div>
 
-      {tvRevealEffect && !game?.show_leaderboard && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(36,193,107,0.20)",
-            zIndex: 9997,
-            pointerEvents: "none",
-          }}
-        >
-          <div
-            style={{
-              ...panelStyle,
-              width: "min(900px, 92vw)",
-              textAlign: "center",
-              border: "3px solid rgba(36,193,107,0.9)",
-              background: "rgba(36,193,107,0.18)",
-              animation: "answerFlashPop 0.25s ease",
-              boxShadow: "0 0 40px rgba(36,193,107,0.35)",
-            }}
-          >
-            <div style={{ fontSize: 88, marginBottom: 14 }}>✅</div>
-            <div style={{ fontSize: 54, fontWeight: "bold", marginBottom: 10 }}>
-              RISPOSTA ESATTA
-            </div>
-            <div style={{ fontSize: 40, color: GOLD, marginBottom: 12 }}>
-              {tvRevealEffect.correctAnswer}
-            </div>
-            {tvRevealEffect.explanation && (
-              <div style={{ fontSize: 28, lineHeight: 1.35, opacity: 0.95 }}>
-                {tvRevealEffect.explanation}
+      {/* LISTA */}
+      <div style={{ width: "80%", maxWidth: 900 }}>
+        {sorted.map((p, i) => {
+          const isWinner = i === 0;
+          const seconds = (Number(p.stopped_ms || 0) / 1000).toFixed(2);
+          const diff = (Number(p.diff_ms || 0) / 1000).toFixed(2);
+
+          return (
+            <div
+              key={p.id || p.player_id}
+              style={{
+                marginBottom: 15,
+                padding: "15px 25px",
+                borderRadius: 12,
+                display: "grid",
+                gridTemplateColumns: "1fr auto auto auto",
+                gap: 22,
+                alignItems: "center",
+                background: isWinner
+                  ? "linear-gradient(135deg,#facc15,#ca8a04)"
+                  : "rgba(255,255,255,0.05)",
+                color: isWinner ? "#111827" : "white",
+                animation: "slideUp 0.6s ease forwards",
+              }}
+            >
+              {/* NOME */}
+              <div style={{ fontSize: 26, fontWeight: "bold" }}>
+                {i + 1}. {p.player_name}
               </div>
-            )}
-          </div>
+
+              {/* TEMPO */}
+              <div style={{ fontSize: 26 }}>
+                {seconds}s
+              </div>
+
+              {/* DIFFERENZA */}
+              <div style={{ fontSize: 20, opacity: 0.75 }}>
+                Δ {diff}s
+              </div>
+
+              {/* PUNTI */}
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: "bold",
+                  color: isWinner ? "#14532d" : "#22c55e",
+                }}
+              >
+                +{p.score_awarded || 0}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* VINCITORE */}
+      {sorted[0] && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 80,
+            fontSize: 50,
+            fontWeight: "bold",
+            color: "#facc15",
+            textShadow: "0 0 25px rgba(250,204,21,0.9)",
+            animation: "winnerPop 1s ease forwards",
+          }}
+        >
+          🏆 VINCE {String(sorted[0].player_name || "").toUpperCase()}
         </div>
       )}
+    </div>
+  );
+})()}
+      
+{/* =========================
+   10.9 - STILI GLOBALI TV
+========================= */}
+<style>
+{`
+/* ===== BASE ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
 
-      {/* =========================
-         10.9 - Animazioni CSS TV
-      ========================= */}
+/* ===== STOP10 ENTRY (nomi giocatori) ===== */
+@keyframes stopEntry {
+  0% { transform: translateX(90px) scale(0.88); opacity: 0; }
+  70% { transform: translateX(-8px) scale(1.04); opacity: 1; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
 
-      <style>{`
-        @keyframes podiumRise {
-          from { transform: translateY(40px) scale(0.92); opacity: 0; }
-          to { transform: translateY(0) scale(1); opacity: 1; }
-        }
-        @keyframes winnerGlow {
-          0% { transform: scale(1); text-shadow: 0 0 0 rgba(255,255,255,0); }
-          50% { transform: scale(1.08); text-shadow: 0 0 30px rgba(255,215,64,0.95); }
-          100% { transform: scale(1); text-shadow: 0 0 12px rgba(255,215,64,0.55); }
-        }
-        @keyframes pulseTime {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.12); }
-          100% { transform: scale(1); }
-        }
-        @keyframes answerFlashPop {
-          0% { transform: scale(0.85); opacity: 0; }
-          20% { transform: scale(1.06); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes correctRevealGlow {
-          0% { transform: scale(0.96); opacity: 0; }
-          50% { transform: scale(1.03); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes selectedPulse {
-          0% { box-shadow: 0 0 0 rgba(255,255,255,0); }
-          50% { box-shadow: 0 0 24px rgba(255,255,255,0.28); }
-          100% { box-shadow: 0 0 0 rgba(255,255,255,0); }
-        }
-      `}</style>
+/* ===== LEADER HIGHLIGHT ===== */
+@keyframes leaderPulse {
+  0% { transform: scale(1); box-shadow: 0 0 22px rgba(250,204,21,0.42); }
+  50% { transform: scale(1.045); box-shadow: 0 0 64px rgba(250,204,21,0.90); }
+  100% { transform: scale(1); box-shadow: 0 0 22px rgba(250,204,21,0.42); }
+}
 
+/* ===== SFONDO DINAMICO STOP10 ===== */
+@keyframes stopBackgroundMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ===== GLOW TESTO ===== */
+@keyframes textGlow {
+  0% { text-shadow: 0 0 10px rgba(255,255,255,0.2); }
+  50% { text-shadow: 0 0 30px rgba(255,255,255,0.9); }
+  100% { text-shadow: 0 0 10px rgba(255,255,255,0.2); }
+}
+
+/* ===== COUNTDOWN DRAMMATICO ===== */
+@keyframes countdownPulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ===== PARTICELLE LENTE ===== */
+@keyframes floatParticles {
+  0% { transform: translateY(0px); opacity: 0.2; }
+  50% { transform: translateY(-20px); opacity: 0.6; }
+  100% { transform: translateY(0px); opacity: 0.2; }
+}
+
+/* ===== CLASSIFICA SLIDE ===== */
+@keyframes slideUp {
+  0% { transform: translateY(40px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* ===== GENERALE ===== */
+.tv-anim-fade {
+  animation: fadeIn 0.4s ease;
+}
+
+.stop-entry {
+  animation: stopEntry 0.6s ease;
+}
+
+.leader-highlight {
+  animation: leaderPulse 1.6s infinite;
+}
+
+.stop-bg {
+  background: linear-gradient(270deg, #0f172a, #1e293b, #020617);
+  background-size: 600% 600%;
+  animation: stopBackgroundMove 10s ease infinite;
+}
+
+.glow-text {
+  animation: textGlow 2s ease-in-out infinite;
+}
+
+.countdown-effect {
+  animation: countdownPulse 1s infinite;
+}
+
+.float-particles {
+  animation: floatParticles 6s ease-in-out infinite;
+}
+
+.slide-up {
+  animation: slideUp 0.5s ease;
+}
+`}
+</style>
+      
       {/* =========================
          10.10 - Contenitore schermate TV
       ========================= */}
@@ -3940,6 +4528,184 @@ if (role === "tv") {
           overflow: "hidden",
         }}
       >
+
+{/* =========================
+   10.10B - Minigioco STOP 10 TV
+========================= */}
+
+{effectivePhase === "stop10" && (
+  <div
+    className="stop-bg tv-anim-fade"
+    style={{
+      position: "fixed",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "flex-start",
+      padding: "40px 20px",
+      color: "white",
+      overflow: "hidden",
+      zIndex: 9995,
+    }}
+  >
+    {/* PARTICELLE SFONDO */}
+    <div
+      className="float-particles"
+      style={{
+        position: "absolute",
+        width: "200%",
+        height: "200%",
+        top: "-50%",
+        left: "-50%",
+        background:
+          "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)",
+        backgroundSize: "40px 40px",
+        pointerEvents: "none",
+        zIndex: 0,
+      }}
+    />
+
+    {/* CONTENUTO */}
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        width: "100%",
+        maxWidth: 1100,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}
+    >
+      {/* TITOLO */}
+      <div
+        className="glow-text"
+        style={{
+          fontSize: "clamp(40px, 6vw, 80px)",
+          fontWeight: "900",
+          marginBottom: 10,
+          textAlign: "center",
+          lineHeight: 1,
+        }}
+      >
+        ⏱ STOP A 10 SECONDI
+      </div>
+
+      <div
+        style={{
+          fontSize: "clamp(18px, 2vw, 28px)",
+          opacity: 0.85,
+          marginBottom: 28,
+          textAlign: "center",
+        }}
+      >
+        Fermati il più vicino possibile a 10.00
+      </div>
+
+      {/* TIMER GRANDE */}
+      <div
+        className="countdown-effect"
+        style={{
+          fontSize: "clamp(86px, 13vw, 170px)",
+          fontWeight: "900",
+          marginBottom: 34,
+          lineHeight: 1,
+          color: stop10HideTimer ? "white" : GOLD,
+          textShadow: stop10HideTimer
+            ? "0 0 40px rgba(255,255,255,0.65)"
+            : "0 0 45px rgba(250,204,21,0.75)",
+        }}
+      >
+        {stop10DisplayTime}
+      </div>
+
+      {/* LISTA GIOCATORI CHE HANNO STOPPATO */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 920,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          overflow: "hidden",
+        }}
+      >
+        {currentStop10Results.length === 0 ? (
+          <div
+            style={{
+              padding: "18px 24px",
+              borderRadius: 18,
+              background: "rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              textAlign: "center",
+              fontSize: "clamp(22px, 2.4vw, 34px)",
+              fontWeight: "bold",
+              opacity: 0.9,
+            }}
+          >
+            Nessuno ha ancora premuto STOP
+          </div>
+        ) : (
+          currentStop10Results.slice(0, 8).map((p, i) => {
+            const isLeader = i === 0;
+            const stoppedSeconds = (Number(p.stopped_ms || 0) / 1000).toFixed(2);
+            const diffSeconds = (Number(p.diff_ms || 0) / 1000).toFixed(2);
+
+            return (
+              <div
+                key={p.id || p.player_id}
+                className={`stop-entry ${isLeader ? "leader-highlight" : ""}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto",
+                  gap: 18,
+                  alignItems: "center",
+                  padding: "14px 20px",
+                  borderRadius: 16,
+                  background: isLeader
+                    ? "linear-gradient(90deg,#facc15,#eab308)"
+                    : "rgba(255,255,255,0.06)",
+                  color: isLeader ? "#000" : "#fff",
+                  fontWeight: 800,
+                  fontSize: "clamp(16px, 2vw, 25px)",
+                  border: isLeader
+                    ? "2px solid rgba(255,255,255,0.65)"
+                    : "1px solid rgba(255,255,255,0.12)",
+                  boxShadow: isLeader
+                    ? "0 0 44px rgba(250,204,21,0.55)"
+                    : "0 10px 24px rgba(0,0,0,0.20)",
+                }}
+              >
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {i + 1}. {p.player_name || "Giocatore"}
+                </span>
+
+                <span>{stoppedSeconds}s</span>
+
+                <span
+                  style={{
+                    fontSize: "0.78em",
+                    opacity: 0.82,
+                  }}
+                >
+                  Δ {diffSeconds}s
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  </div>
+)}
 
 {/* =========================
    10.11 - Lobby TV
@@ -4168,7 +4934,7 @@ if (role === "tv") {
 )}
 
 {/* =========================
-   10.12 - Classifica provvisoria TV
+   10.12 - Classifica provvisoria TV con reveal completo dall'ultimo al primo
 ========================= */}
 
 {Boolean(game?.show_leaderboard) && game?.phase !== "final" && (
@@ -4182,40 +4948,91 @@ if (role === "tv") {
         Nessun giocatore
       </div>
     ) : (
-      <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 18 }}>
-        {players.map((p, idx) => (
+      (() => {
+        const sortedPlayers = [...players].sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+        });
+
+        const revealCount = Math.min(
+          Math.max(leaderboardRevealCount || 0, 1),
+          sortedPlayers.length
+        );
+
+        const startIndex = sortedPlayers.length - revealCount;
+        const visiblePlayers = sortedPlayers.slice(startIndex);
+
+        return (
           <div
-            key={p.id}
             style={{
-              ...panelStyle,
-              fontSize: 34,
+              height: "calc(100% - 100px)",
+              maxWidth: 1000,
+              margin: "0 auto",
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              background:
-                idx === 0
-                  ? "rgba(255,215,64,0.18)"
-                  : idx === 1
-                  ? "rgba(192,192,192,0.18)"
-                  : idx === 2
-                  ? "rgba(205,127,50,0.18)"
-                  : "rgba(255,255,255,0.06)",
-              border:
-                idx === 0
-                  ? "2px solid rgba(255,215,64,0.7)"
-                  : "1px solid rgba(255,255,255,0.14)",
+              flexDirection: "column-reverse",
+              gap: 14,
+              overflow: "hidden",
+              justifyContent: "flex-start",
             }}
           >
-            <span>
-              {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "•"} {idx + 1}.{" "}
-              {p.name} {p.jolly_used ? "🃏" : ""}
-            </span>
-            <span style={{ color: GOLD, fontWeight: "bold" }}>
-              {p.score || 0} pt
-            </span>
+            {visiblePlayers.map((p) => {
+              const realIndex = sortedPlayers.findIndex((player) => player.id === p.id);
+              const position = realIndex + 1;
+              const isFinalWinner =
+                position === 1 && revealCount >= sortedPlayers.length;
+
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    ...panelStyle,
+                    fontSize: position <= 3 ? 36 : 30,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "16px 22px",
+                    background:
+                      position === 1
+                        ? "rgba(255,215,64,0.24)"
+                        : position === 2
+                        ? "rgba(192,192,192,0.20)"
+                        : position === 3
+                        ? "rgba(205,127,50,0.20)"
+                        : "rgba(255,255,255,0.07)",
+                    border:
+                      position === 1
+                        ? "2px solid rgba(255,215,64,0.85)"
+                        : position === 2
+                        ? "2px solid rgba(229,231,235,0.45)"
+                        : position === 3
+                        ? "2px solid rgba(205,127,50,0.55)"
+                        : "1px solid rgba(255,255,255,0.14)",
+                    animation: isFinalWinner
+                      ? "winnerGlow 1.4s infinite"
+                      : "slideUp 0.55s ease",
+                  }}
+                >
+                  <span>
+                    {position === 1
+                      ? "🥇"
+                      : position === 2
+                      ? "🥈"
+                      : position === 3
+                      ? "🥉"
+                      : `#${position}`}{" "}
+                    {p.name} {p.jolly_used ? "🃏" : ""}
+                  </span>
+
+                  <span style={{ color: GOLD, fontWeight: "bold" }}>
+                    {p.score || 0} pt
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+        );
+      })()
     )}
   </div>
 )}
@@ -4700,200 +5517,131 @@ if (role === "tv") {
   );
 }
 
-
 /* =====================================================
-   PARTE 11 - RENDER SCHERMATA HOST E CHIUSURA COMPONENTE
+   PARTE 11 - SCHERMATA HOST + CONTROLLI
 ===================================================== */
 
+if (role === "host") {
   return (
     <div
       style={{
-        ...containerStyle,
-        position: "relative",
-        height: "100vh",
+        padding: 20,
+        color: "white",
+        background: "#020617",
+        minHeight: "100vh",
         overflowY: "auto",
-        overflowX: "hidden",
-        paddingBottom: 24,
       }}
     >
-      {hostBanner && (
-        <div
+      <h1 style={{ fontSize: 28, marginBottom: 10 }}>
+        🎤 HOST PANEL
+      </h1>
+
+      <div style={{ marginBottom: 20 }}>
+        <strong>Fase:</strong> {effectivePhase}
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <strong>Giocatori:</strong> {players.length}
+      </div>
+
+      {/* ===== CONTROLLI ===== */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+
+        {/* ===== IMPORT CSV ===== */}
+        <label
           style={{
-            position: "fixed",
-            top: 20,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: RED,
-            color: "white",
-            padding: "18px 28px",
-            borderRadius: 12,
-            fontWeight: "bold",
-            fontSize: 24,
-            zIndex: 9999,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            ...buttonStyle,
+            cursor: "pointer",
+            background: "linear-gradient(135deg,#2563eb,#1e3a8a)",
           }}
         >
-          {hostBanner.event_text}
+          📁 Importa CSV
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => importCsvQuestions(e.target.files?.[0])}
+            style={{ display: "none" }}
+          />
+        </label>
+
+        {/* ===== AVVIO QUIZ ===== */}
+        <button onClick={startQuiz} style={buttonStyle}>
+          ▶️ Avvia Quiz
+        </button>
+
+        <button onClick={nextQuestion} style={buttonStyle}>
+          ➡️ Prossima domanda
+        </button>
+
+        <button onClick={revealAnswer} style={buttonStyle}>
+          💡 Mostra risposta
+        </button>
+
+        {/* ===== CLASSIFICA TV ===== */}
+        <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>
+          🏆 Mostra / Nascondi classifica
+        </button>
+
+        {/* ===== STOP10 ===== */}
+        <button
+          onClick={startStop10Game}
+          style={{
+            ...buttonStyle,
+            background: "linear-gradient(135deg,#f59e0b,#b45309)",
+          }}
+        >
+          ⏱ Avvia Stop10
+        </button>
+
+        <button
+          onClick={finishStop10Game}
+          style={{
+            ...buttonStyle,
+            background: "linear-gradient(135deg, #22c55e 0%, #15803d 100%)",
+          }}
+        >
+          🏆 Risultati Stop10
+        </button>
+
+        {/* ===== EXPORT CSV CLASSIFICA ===== */}
+        <button
+          onClick={downloadLeaderboardCsv}
+          style={{
+            ...buttonStyle,
+            background: "linear-gradient(135deg,#06b6d4,#0e7490)",
+          }}
+        >
+          📊 Esporta classifica CSV
+        </button>
+
+        {/* ===== RESET ===== */}
+        <button
+          onClick={resetAll}
+          style={{
+            ...buttonStyle,
+            background: "linear-gradient(135deg,#ef4444,#7f1d1d)",
+          }}
+        >
+          🔄 Reset completo
+        </button>
+      </div>
+
+      {/* ===== STATUS ===== */}
+      {status && (
+        <div
+          style={{
+            marginTop: 20,
+            padding: 10,
+            background: "rgba(255,255,255,0.08)",
+            borderRadius: 10,
+          }}
+        >
+          {status}
         </div>
       )}
-
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", fontSize: 42 }}>🎤 HOST</h1>
-
-        <p style={{ textAlign: "center" }}>
-          <b>Stato:</b> {status}
-        </p>
-
-        <p style={{ textAlign: "center", fontSize: 22, color: GOLD, fontWeight: "bold" }}>
-          🎯 Domanda{" "}
-          {questions.length > 0 ? Number(game?.current_question_index || 0) + 1 : 0} di{" "}
-          {questions.length}
-        </p>
-
-        <p style={{ textAlign: "center" }}>
-          <b>Fase DB:</b> {game?.phase || "-"}
-        </p>
-        <p style={{ textAlign: "center" }}>
-          <b>Fase reale:</b> {effectivePhase || "-"}
-        </p>
-        <p style={{ textAlign: "center" }}>
-          <b>Tempo:</b> {hostDisplayedTime}
-        </p>
-        <p style={{ textAlign: "center" }}>
-          <b>Codice:</b> {GAME_CODE}
-        </p>
-
-        {isLoading && <p style={{ textAlign: "center", opacity: 0.8 }}>Caricamento...</p>}
-
-        <div style={{ ...panelStyle, textAlign: "center", marginBottom: 20 }}>
-          <button onClick={() => loadAll()} style={buttonStyle}>
-            Aggiorna
-          </button>
-
-          <button onClick={startQuiz} style={buttonStyle}>
-            Avvia quiz
-          </button>
-
-          <button onClick={revealAnswer} style={buttonStyle}>
-            Mostra risposta
-          </button>
-
-          <button onClick={nextQuestion} style={buttonStyle}>
-            Prossima domanda
-          </button>
-
-          <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>
-            {game?.show_leaderboard ? "Nascondi classifica TV" : "Mostra classifica TV"}
-          </button>
-
-          <button
-            onClick={downloadLeaderboardCsv}
-            style={{
-              ...buttonStyle,
-              background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
-            }}
-          >
-            Scarica classifica CSV
-          </button>
-
-          <button onClick={resetAll} style={{ ...buttonStyle, background: RED }}>
-            Reset
-          </button>
-
-          <label style={{ ...buttonStyle, display: "inline-block" }}>
-            Importa CSV
-            <input
-              type="file"
-              accept=".csv"
-              style={{ display: "none" }}
-              onChange={(e) => importCsvQuestions(e.target.files?.[0])}
-            />
-          </label>
-        </div>
-
-        {currentQuestion && (
-          <div style={{ ...panelStyle, marginBottom: 24 }}>
-            <h2>
-              Domanda corrente — {Number(game?.current_question_index || 0) + 1} /{" "}
-              {questions.length}
-            </h2>
-
-            {renderQuestionMedia(currentQuestion, "host")}
-
-            <p style={{ fontSize: 24, fontWeight: "bold" }}>{currentQuestion.question}</p>
-            <p>A - {currentQuestion.option_a}</p>
-            <p>B - {currentQuestion.option_b}</p>
-            {currentQuestion.option_c && <p>C - {currentQuestion.option_c}</p>}
-            {currentQuestion.option_d && <p>D - {currentQuestion.option_d}</p>}
-
-            {currentQuestion.image_url && (
-              <p style={{ marginTop: 10, opacity: 0.88 }}>
-                <b>Image URL:</b> {currentQuestion.image_url}
-              </p>
-            )}
-
-            {currentQuestion.audio_url && (
-              <p style={{ opacity: 0.88 }}>
-                <b>Audio presente:</b> sì
-              </p>
-            )}
-
-            {(game?.phase === "question" || game?.phase === "stats" || game?.phase === "reveal") && (
-              <div style={{ marginTop: 18 }}>
-                <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 6 }}>
-                  Risposte ricevute: {answerStats.totalAnswered} / {answerStats.totalPlayers}
-                </div>
-
-                <div style={{ fontSize: 16, opacity: 0.92 }}>
-                  A {answerStats.A.percent}% · B {answerStats.B.percent}%
-                  {currentQuestion.option_c ? ` · C ${answerStats.C.percent}%` : ""}
-                  {currentQuestion.option_d ? ` · D ${answerStats.D.percent}%` : ""}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ display: "grid", gap: 20, gridTemplateColumns: "1fr 1fr" }}>
-          <div style={panelStyle}>
-            <h2>Classifica</h2>
-
-            {players.length === 0 ? (
-              <p>Nessun giocatore ancora.</p>
-            ) : (
-              players.map((p, idx) => (
-                <div key={p.id} style={{ marginBottom: 10, fontSize: 18 }}>
-                  {idx + 1}. {p.name} - {p.score || 0} punti
-                </div>
-              ))
-            )}
-          </div>
-
-          <div style={panelStyle}>
-            <h2>Eventi live</h2>
-
-            {liveEvents.length === 0 ? (
-              <p>Nessun evento.</p>
-            ) : (
-              liveEvents.map((event) => (
-                <div
-                  key={event.id}
-                  style={{
-                    marginBottom: 10,
-                    padding: 10,
-                    border: "1px solid rgba(255,255,255,0.14)",
-                    borderRadius: 8,
-                    textAlign: "left",
-                    background: "rgba(255,255,255,0.05)",
-                  }}
-                >
-                  {event.event_text}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
+
+}
+
