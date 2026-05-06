@@ -29,6 +29,7 @@ const supabase = createClient(
 const GAME_CODE = "PUB2026";
 const COUNTDOWN_DURATION = 10;
 const QUESTION_START_DELAY_MS = 3000;
+const SYNC_START_GRACE_MS = 1200;
 const COUNTDOWN_AUDIO_SRC = "/media/countdown10.m4a";
 const REVEAL_AUDIO_SRC = "";
 const HOST_PASSWORD = "Cromos6339";
@@ -1288,8 +1289,11 @@ function normalizeCsvRows(rows) {
     .map((row, index) => {
       const type = String(row.type || "multiple").trim().toLowerCase();
       const cleanedType =
-        type === "truefalse" || type === "vero_falso" ? "truefalse" : "multiple";
-
+  type === "truefalse" || type === "vero_falso"
+    ? "truefalse"
+    : ["multiple", "image", "audio", "video"].includes(type)
+    ? type
+    : "multiple";
       return {
         position: index,
         round: Number(row.round || 1),
@@ -1520,8 +1524,12 @@ async function importCsvQuestions(file) {
       const firstQuestion = questions.find((q) => q.position === 0) || questions[0];
       const firstTime = normalizeQuestionTime(firstQuestion);
 
-      const countdownStartedAtMs = Math.round(syncedNowRef.current);
-      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+      const countdownStartedAtMs = Math.round(
+  syncedNowRef.current + SYNC_START_GRACE_MS
+);
+
+const questionStartedAtMs =
+  countdownStartedAtMs + QUESTION_START_DELAY_MS;
 
       const { data: updatedGame, error } = await supabase
         .from("games")
@@ -1709,9 +1717,12 @@ async function importCsvQuestions(file) {
 
     try {
       const duration = normalizeQuestionTime(q);
-      const countdownStartedAtMs = Math.round(syncedNowRef.current);
-      const questionStartedAtMs = countdownStartedAtMs + QUESTION_START_DELAY_MS;
+      const countdownStartedAtMs = Math.round(
+  syncedNowRef.current + SYNC_START_GRACE_MS
+);
 
+const questionStartedAtMs =
+  countdownStartedAtMs + QUESTION_START_DELAY_MS;
       const { data: updatedGame, error } = await supabase
         .from("games")
         .update({
@@ -4397,8 +4408,6 @@ const getTvYouTubeEmbedUrl = (url) => {
     return "";
   };
 
-
-  
 /* =========================
    10.3 - Render media domanda TV
 ========================= */
@@ -4406,13 +4415,28 @@ const getTvYouTubeEmbedUrl = (url) => {
 const renderTvQuestionMedia = (question, variant = "question") => {
   if (!question) return null;
 
+  const isAudioQuestion =
+    String(question.type || "").trim().toLowerCase() === "audio";
+
   const hasImage = Boolean(question.image_url) && variant !== "countdown";
   const hasAudio = Boolean(question.audio_url) && variant !== "countdown";
   const hasVideo = Boolean(question.video_url) && variant === "question";
-  const hasYouTube = Boolean(question.youtube_url) && variant === "question";
+
+  const hasYouTube =
+    Boolean(question.youtube_url) &&
+    variant === "question" &&
+    !isAudioQuestion;
+
+  const hasYouTubeAudio =
+    Boolean(question.youtube_url) &&
+    variant === "question" &&
+    isAudioQuestion;
+
   const youtubeEmbedUrl = getTvYouTubeEmbedUrl(question.youtube_url);
 
-  if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
+  if (!hasImage && !hasAudio && !hasVideo && !hasYouTube && !hasYouTubeAudio) {
+    return null;
+  }
 
   const imageMaxHeight =
     variant === "question" ? "20vh" : variant === "stats" ? "18vh" : "18vh";
@@ -4457,6 +4481,80 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         </div>
       )}
 
+      {hasYouTubeAudio && youtubeEmbedUrl && (
+        <div
+          style={{
+            width: "100%",
+            minHeight: videoHeight,
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background:
+              "radial-gradient(circle at center, rgba(124,58,237,0.35) 0%, rgba(15,23,42,0.95) 58%, #000 100%)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <iframe
+            src={youtubeEmbedUrl}
+            title="Audio YouTube domanda"
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              opacity: 0,
+              pointerEvents: "none",
+              border: "none",
+            }}
+            allow="autoplay; encrypted-media"
+            allowFullScreen={false}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              zIndex: 2,
+              textAlign: "center",
+              padding: "18px 24px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "clamp(42px, 5vw, 76px)",
+                marginBottom: 10,
+                animation: "pulseTime 1s infinite",
+              }}
+            >
+              🎧
+            </div>
+
+            <div
+              style={{
+                fontSize: "clamp(24px, 2.4vw, 40px)",
+                fontWeight: "bold",
+                color: GOLD,
+                textShadow: "0 0 22px rgba(250,204,21,0.35)",
+              }}
+            >
+              AUDIO IN RIPRODUZIONE
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: "clamp(15px, 1.3vw, 22px)",
+                opacity: 0.88,
+              }}
+            >
+              Ascolta bene e rispondi dal telefono
+            </div>
+          </div>
+        </div>
+      )}
+
       {hasYouTube && youtubeEmbedUrl && (
         <div
           style={{
@@ -4483,7 +4581,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
             allowFullScreen={false}
           />
 
-          {/* MASCHERA NERA SOPRA IL TITOLO */}
           <div
             style={{
               position: "absolute",
@@ -4525,7 +4622,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         </div>
       )}
 
-      {hasAudio && !hasVideo && !hasYouTube && (
+      {hasAudio && !hasVideo && !hasYouTube && !hasYouTubeAudio && (
         <div
           style={{
             width: "fit-content",
@@ -4544,6 +4641,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     </div>
   );
 };
+  
   /* =========================
      10.4 - Layout base TV (contenitore principale)
   ========================= */
