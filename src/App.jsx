@@ -163,20 +163,31 @@ function toMs(value) {
 function getRemainingMs(game, nowMs) {
   if (!game) return 0;
 
+  const questionStartMs = toMs(game.question_started_at_ms);
+  const durationMs = Number(game.question_duration || COUNTDOWN_DURATION) * 1000;
+
+  // FIX PLAYER:
+  // se il countdown è finito ma Supabase non ha ancora aggiornato phase a "question",
+  // calcoliamo già il tempo domanda.
+  if (
+    game.phase === "countdown" &&
+    Number.isFinite(questionStartMs) &&
+    durationMs > 0 &&
+    nowMs >= questionStartMs
+  ) {
+    return Math.max(0, questionStartMs + durationMs - nowMs);
+  }
+
   if (game.phase === "countdown") {
     const startMs = toMs(game.countdown_started_at_ms);
-    const questionStartMs = toMs(game.question_started_at_ms);
 
     if (!Number.isFinite(startMs) || !Number.isFinite(questionStartMs)) return 0;
     return Math.max(0, questionStartMs - nowMs);
   }
 
   if (game.phase === "question") {
-    const startMs = toMs(game.question_started_at_ms);
-    const durationMs = Number(game.question_duration || COUNTDOWN_DURATION) * 1000;
-
-    if (!Number.isFinite(startMs) || durationMs <= 0) return 0;
-    return Math.max(0, startMs + durationMs - nowMs);
+    if (!Number.isFinite(questionStartMs) || durationMs <= 0) return 0;
+    return Math.max(0, questionStartMs + durationMs - nowMs);
   }
 
   return 0;
@@ -460,6 +471,8 @@ export default function App() {
   const [answers, setAnswers] = useState([]);
   const [liveEvents, setLiveEvents] = useState([]);
   const [roundName, setRoundName] = useState("");
+const [mediaCheckReport, setMediaCheckReport] = useState([]);
+const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
 
   const [playerName, setPlayerName] = useState("");
   const [joinedPlayer, setJoinedPlayer] = useState(null);
@@ -1038,8 +1051,236 @@ async function loadAll({ silent = false } = {}) {
 }
 
 /* =====================================================
-   PARTE 5B - IMPORT CSV E NORMALIZZAZIONE
+   PARTE 5B - IMPORT CSV, NORMALIZZAZIONE E CONTROLLO MEDIA
 ===================================================== */
+
+async function checkCsvMediaLinks(rows) {
+  const TIMEOUT_MS = 8000;
+
+  const withTimeout = (promise, type, url) => {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            type,
+            url,
+            status: "warning",
+            message: "Controllo scaduto: potrebbe funzionare, ma il server risponde lento",
+          });
+        }, TIMEOUT_MS);
+      }),
+    ]);
+  };
+
+  const checkImage = (url) => {
+    return withTimeout(
+      new Promise((resolve) => {
+        const img = new Image();
+
+        img.onload = () => {
+          resolve({
+            type: "image",
+            url,
+            status: "ok",
+            message: "Immagine caricabile",
+          });
+        };
+
+        img.onerror = () => {
+          resolve({
+            type: "image",
+            url,
+            status: "error",
+            message: "Immagine non caricabile",
+          });
+        };
+
+        img.src = url;
+      }),
+      "image",
+      url
+    );
+  };
+
+  const checkAudio = (url) => {
+    return withTimeout(
+      new Promise((resolve) => {
+        const audio = document.createElement("audio");
+        audio.preload = "metadata";
+        audio.muted = true;
+
+        audio.onloadedmetadata = () => {
+          resolve({
+            type: "audio",
+            url,
+            status: "ok",
+            message: "Audio caricabile dal browser",
+          });
+        };
+
+        audio.oncanplay = () => {
+          resolve({
+            type: "audio",
+            url,
+            status: "ok",
+            message: "Audio riproducibile dal browser",
+          });
+        };
+
+        audio.onerror = () => {
+          resolve({
+            type: "audio",
+            url,
+            status: "error",
+            message: "Audio non caricabile",
+          });
+        };
+
+        audio.src = url;
+        audio.load();
+      }),
+      "audio",
+      url
+    );
+  };
+
+  const checkVideo = (url) => {
+    return withTimeout(
+      new Promise((resolve) => {
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.muted = true;
+        video.playsInline = true;
+
+        video.onloadedmetadata = () => {
+          resolve({
+            type: "video",
+            url,
+            status: "ok",
+            message: "Video diretto caricabile dal browser",
+          });
+        };
+
+        video.oncanplay = () => {
+          resolve({
+            type: "video",
+            url,
+            status: "ok",
+            message: "Video diretto riproducibile dal browser",
+          });
+        };
+
+        video.onerror = () => {
+          resolve({
+            type: "video",
+            url,
+            status: "error",
+            message: "Video non caricabile. Se è YouTube, va messo in youtube_url, non in video_url",
+          });
+        };
+
+        video.src = url;
+        video.load();
+      }),
+      "video",
+      url
+    );
+  };
+
+  const getYoutubeId = (url) => {
+    try {
+      const parsed = new URL(String(url).trim());
+
+      if (parsed.hostname.includes("youtu.be")) {
+        return parsed.pathname.replace("/", "").split("?")[0];
+      }
+
+      if (parsed.hostname.includes("youtube.com")) {
+        if (parsed.pathname.startsWith("/watch")) {
+          return parsed.searchParams.get("v") || "";
+        }
+
+        if (parsed.pathname.startsWith("/shorts/")) {
+          return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+        }
+
+        if (parsed.pathname.startsWith("/embed/")) {
+          return parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+        }
+      }
+
+      return "";
+    } catch {
+      return "";
+    }
+  };
+
+  const checkYoutube = (url) => {
+    return withTimeout(
+      new Promise((resolve) => {
+        const videoId = getYoutubeId(url);
+
+        if (!videoId) {
+          resolve({
+            type: "youtube",
+            url,
+            status: "error",
+            message: "Link YouTube non valido",
+          });
+          return;
+        }
+
+        const img = new Image();
+
+        img.onload = () => {
+          resolve({
+            type: "youtube",
+            url,
+            status: "ok",
+            message: "Video YouTube trovato. Embed da verificare in TV",
+          });
+        };
+
+        img.onerror = () => {
+          resolve({
+            type: "youtube",
+            url,
+            status: "warning",
+            message: "ID YouTube valido, ma thumbnail non verificata",
+          });
+        };
+
+        img.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+      }),
+      "youtube",
+      url
+    );
+  };
+
+  const report = [];
+
+  for (const row of rows) {
+    const checks = [];
+
+    if (row.image_url) checks.push(checkImage(row.image_url));
+    if (row.audio_url) checks.push(checkAudio(row.audio_url));
+    if (row.video_url) checks.push(checkVideo(row.video_url));
+    if (row.youtube_url) checks.push(checkYoutube(row.youtube_url));
+
+    const results = await Promise.all(checks);
+
+    results.filter(Boolean).forEach((check) => {
+      report.push({
+        position: row.position,
+        question: row.question,
+        ...check,
+      });
+    });
+  }
+
+  return report;
+}
 
 function normalizeCsvRows(rows) {
   return rows
@@ -1082,6 +1323,8 @@ async function importCsvQuestions(file) {
   if (!file || !game) return;
 
   setStatus("Import CSV in corso...");
+  setMediaCheckRunning(false);
+  setMediaCheckReport([]);
 
   Papa.parse(file, {
     header: true,
@@ -1094,6 +1337,11 @@ async function importCsvQuestions(file) {
           setStatus("CSV vuoto o non valido");
           return;
         }
+
+        setMediaCheckRunning(true);
+        const mediaReport = await checkCsvMediaLinks(parsedRows);
+        setMediaCheckReport(mediaReport);
+        setMediaCheckRunning(false);
 
         await supabase.from("answers").delete().eq("game_id", game.id);
         await supabase.from("questions").delete().eq("game_id", game.id);
@@ -1147,10 +1395,12 @@ async function importCsvQuestions(file) {
         setStatus(`Import completato: ${parsedRows.length} domande`);
       } catch (error) {
         console.error(error);
+        setMediaCheckRunning(false);
         setStatus("Errore import CSV: " + error.message);
       }
     },
     error: () => {
+      setMediaCheckRunning(false);
       setStatus("Errore lettura CSV");
     },
   });
@@ -1604,6 +1854,8 @@ async function importCsvQuestions(file) {
       setLiveEvents([]);
       setFinalRevealIndex(-1);
       setRoundName("");
+setMediaCheckReport([]);
+setMediaCheckRunning(false);
 
       submitLockRef.current = false;
       jollyLockRef.current = false;
@@ -2818,100 +3070,21 @@ useEffect(() => {
 }, [role, game?.show_leaderboard, game?.phase, players.length]);
 
 /* =========================
-   7.18 - AUTOSCALE PLAYER
+   7.18 - AUTOSCALE PLAYER DISATTIVATO
 ========================= */
 
 useEffect(() => {
   if (role !== "player") return;
 
-  if (effectivePhase !== "question") {
-    setPlayerQuestionScale(1);
-    setPlayerQuestionFitReady(false);
-    return;
-  }
+  // disattiviamo completamente l’autoscale dinamico
+  setPlayerQuestionScale(1);
+  setPlayerQuestionFitReady(true);
 
-  const outer = playerQuestionOuterRef.current;
-  const inner = playerQuestionInnerRef.current;
-
-  if (!outer || !inner) return;
-
-  let frameId = null;
-
-  setPlayerQuestionFitReady(false);
-
-  const fitPlayerQuestion = () => {
-    inner.style.transform = "scale(1)";
-    inner.style.width = "100%";
-
-    const outerHeight = outer.clientHeight;
-    const innerHeight = inner.scrollHeight;
-
-    if (!outerHeight || !innerHeight) {
-      setPlayerQuestionScale(1);
-      setPlayerQuestionFitReady(true);
-      return;
-    }
-
-    let scale = 1;
-
-    while (innerHeight * scale > outerHeight && scale > 0.78) {
-      scale -= 0.02;
-    }
-
-    scale = Math.max(0.78, Math.min(1, scale));
-
-    setPlayerQuestionScale(scale);
-    setPlayerQuestionFitReady(true);
-  };
-
-  const requestFit = () => {
-    if (frameId) cancelAnimationFrame(frameId);
-    frameId = requestAnimationFrame(fitPlayerQuestion);
-  };
-
-  requestFit();
-
-  const timeout1 = setTimeout(requestFit, 40);
-  const timeout2 = setTimeout(requestFit, 120);
-  const timeout3 = setTimeout(requestFit, 260);
-
-  window.addEventListener("resize", requestFit);
-  window.addEventListener("orientationchange", requestFit);
-
-  return () => {
-    if (frameId) cancelAnimationFrame(frameId);
-    clearTimeout(timeout1);
-    clearTimeout(timeout2);
-    clearTimeout(timeout3);
-    window.removeEventListener("resize", requestFit);
-    window.removeEventListener("orientationchange", requestFit);
-  };
 }, [
   role,
   effectivePhase,
-  currentQuestion?.id,
-  currentQuestion?.question,
-  currentQuestion?.image_url,
-  currentQuestion?.audio_url,
-  currentQuestion?.option_a,
-  currentQuestion?.option_b,
-  currentQuestion?.option_c,
-  currentQuestion?.option_d,
-  localTimeLeft,
-  selectedAnswer,
+  currentQuestion?.id
 ]);
-
-/* =========================
-   7.19 - Reset stato Stop10
-========================= */
-
-useEffect(() => {
-  if (!game?.stop10_round_id) return;
-
-  setStop10PlayerStopped(false);
-  setStop10PlayerResult(null);
-  stop10LockRef.current = false;
-}, [game?.stop10_round_id]);
 
 /* =====================================================
    PARTE 8 - STILI LOCALI E FUNZIONI RENDER
@@ -3065,11 +3238,63 @@ const renderQuestionMedia = (question, mode = "player") => {
 
   const hasImage = Boolean(question.image_url);
   const hasAudio = Boolean(question.audio_url);
+  const hasVideo = Boolean(question.video_url);
+  const hasYouTube = Boolean(question.youtube_url);
 
-  if (!hasImage && !hasAudio) return null;
+  if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
+
+  const getYouTubeEmbedUrl = (url) => {
+    if (!url) return "";
+
+    try {
+      const parsed = new URL(String(url).trim());
+      let videoId = "";
+
+      if (parsed.hostname.includes("youtu.be")) {
+        videoId = parsed.pathname.replace("/", "").split("?")[0];
+      } else if (parsed.hostname.includes("youtube.com")) {
+        if (parsed.pathname.startsWith("/watch")) {
+          videoId = parsed.searchParams.get("v") || "";
+        } else if (parsed.pathname.startsWith("/shorts/")) {
+          videoId = parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+        } else if (parsed.pathname.startsWith("/embed/")) {
+          videoId = parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+        }
+      }
+
+      if (!videoId) return "";
+
+      const startRaw = parsed.searchParams.get("start") || parsed.searchParams.get("t") || "";
+      const start = String(startRaw).replace("s", "").trim();
+
+      const params = new URLSearchParams({
+        controls: "1",
+        rel: "0",
+        modestbranding: "1",
+        playsinline: "1",
+      });
+
+      if (mode === "tv") {
+        params.set("autoplay", "1");
+      }
+
+      if (/^\d+$/.test(start)) {
+        params.set("start", start);
+      }
+
+      return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+    } catch {
+      return "";
+    }
+  };
+
+  const youtubeEmbedUrl = getYouTubeEmbedUrl(question.youtube_url);
 
   const imageMaxHeight =
-    mode === "tv" ? "26vh" : mode === "host" ? "160px" : "14dvh";
+    mode === "tv" ? "26vh" : mode === "host" ? "180px" : "22dvh";
+
+  const videoHeight =
+    mode === "tv" ? "30vh" : mode === "host" ? "220px" : "22dvh";
 
   return (
     <div
@@ -3093,6 +3318,9 @@ const renderQuestionMedia = (question, mode = "player") => {
             background: "rgba(255,255,255,0.06)",
             boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
             maxHeight: imageMaxHeight,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           <img
@@ -3100,8 +3328,7 @@ const renderQuestionMedia = (question, mode = "player") => {
             alt="Immagine domanda"
             style={{
               display: "block",
-              width: "100%",
-              height: "100%",
+              maxWidth: "100%",
               maxHeight: imageMaxHeight,
               objectFit: "contain",
               background: "rgba(0,0,0,0.18)",
@@ -3110,14 +3337,68 @@ const renderQuestionMedia = (question, mode = "player") => {
         </div>
       )}
 
-      {hasAudio && mode === "tv" && (
+      {hasYouTube && youtubeEmbedUrl && (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(0,0,0,0.35)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+          }}
+        >
+          <iframe
+            src={youtubeEmbedUrl}
+            title="Video YouTube domanda"
+            style={{
+              display: "block",
+              width: "100%",
+              height: videoHeight,
+              border: "none",
+              background: "black",
+            }}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )}
+
+      {hasVideo && !hasYouTube && (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(0,0,0,0.35)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+          }}
+        >
+          <video
+            src={question.video_url}
+            controls
+            playsInline
+            style={{
+              display: "block",
+              width: "100%",
+              maxHeight: videoHeight,
+              background: "black",
+            }}
+          />
+        </div>
+      )}
+
+      {hasAudio && (
         <div style={questionAudioBoxStyle}>
           <div style={{ fontWeight: "bold", marginBottom: 10 }}>
-            🔊 Audio domanda in riproduzione
+            🔊 Audio domanda
           </div>
-          <div style={{ opacity: 0.88 }}>
-            L'audio parte automaticamente sulla schermata TV.
-          </div>
+          <audio
+            src={question.audio_url}
+            controls
+            style={{ width: "100%" }}
+          />
         </div>
       )}
     </div>
@@ -3767,93 +4048,134 @@ if (role === "player") {
           </div>
         )}
 
-        {/* =========================
-           9.8 - PLAYER - DOMANDA
-        ========================= */}
+{/* =========================
+   9.8 - PLAYER - DOMANDA
+========================= */}
 
-        {effectivePhase === "question" && currentQuestion && (
-          <div
-            ref={playerQuestionOuterRef}
+{effectivePhase === "question" && currentQuestion && (
+  <div
+    ref={playerQuestionOuterRef}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: APP_BG,
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      overflowY: "auto",
+      padding: "10px",
+      boxSizing: "border-box",
+      zIndex: 50,
+    }}
+  >
+    <div
+      ref={playerQuestionInnerRef}
+      style={{
+        ...panelStyle,
+        width: "100%",
+        maxWidth: "700px",
+        textAlign: "center",
+        padding: "10px",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* TIMER */}
+      <div style={{ fontSize: 18, marginBottom: 8 }}>
+        ⏱ {Math.max(0, localTimeLeft)}s
+      </div>
+
+      {/* JOLLY */}
+      {!jollyUsed && localTimeLeft > 0 && !selectedAnswer && (
+        <button
+          onClick={useJollyCard}
+          style={{
+            ...buttonStyle,
+            marginBottom: 8,
+            padding: "8px 12px",
+            fontSize: 14,
+            borderRadius: 10,
+            background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+          }}
+        >
+          🃏 USA JOLLY
+        </button>
+      )}
+
+      {jollyUsed && (
+        <div
+          style={{
+            color: GOLD,
+            fontWeight: "bold",
+            marginBottom: 8,
+            fontSize: 14,
+          }}
+        >
+          🃏 JOLLY già usato
+        </div>
+      )}
+
+      {/* DOMANDA */}
+      <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
+        {currentQuestion.question}
+      </div>
+
+      {/* IMMAGINE (ADATTIVA) */}
+      {currentQuestion.image_url && (
+        <div
+          style={{
+            width: "100%",
+            maxHeight: "22dvh",
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          <img
+            src={currentQuestion.image_url}
+            alt="Immagine domanda"
             style={{
-              position: "fixed",
-              inset: 0,
-              background: APP_BG,
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "center",
-              overflow: "hidden",
-              padding: "10px",
-              boxSizing: "border-box",
-              zIndex: 50,
+              maxWidth: "100%",
+              maxHeight: "22dvh",
+              objectFit: "contain",
+              borderRadius: 10,
             }}
-          >
-            <div
-              ref={playerQuestionInnerRef}
+          />
+        </div>
+      )}
+
+      {/* RISPOSTE */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {["A", "B", "C", "D"].map((letter) => {
+          const text = currentQuestion[`option_${letter.toLowerCase()}`];
+          if (!text) return null;
+
+          return (
+            <button
+              key={letter}
+              onClick={() => submitAnswer(letter)}
+              disabled={!!selectedAnswer}
               style={{
-                ...panelStyle,
-                width: "100%",
-                maxWidth: "700px",
-                textAlign: "center",
+                ...getPlayerAnswerButtonStyle(
+                  letter,
+                  !!selectedAnswer,
+                  selectedAnswer === letter
+                ),
                 padding: "10px",
-                transform: `scale(${playerQuestionScale})`,
-                opacity: playerQuestionFitReady ? 1 : 0,
-                transformOrigin: "top center",
-                transition: "opacity 0.06s ease",
-                boxSizing: "border-box",
+                fontSize: 16,
+                borderRadius: 10,
               }}
             >
-              <div style={{ fontSize: 18, marginBottom: 8 }}>
-                ⏱ {Math.max(0, localTimeLeft)}s
-              </div>
-
-              <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
-                {currentQuestion.question}
-              </div>
-
-              {currentQuestion.image_url && (
-                <img
-                  src={currentQuestion.image_url}
-                  alt="Immagine domanda"
-                  style={{
-                    width: "100%",
-                    maxHeight: "40vh",
-                    objectFit: "contain",
-                    marginBottom: 8,
-                    borderRadius: 10,
-                  }}
-                />
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {["A", "B", "C", "D"].map((letter) => {
-                  const text = currentQuestion[`option_${letter.toLowerCase()}`];
-                  if (!text) return null;
-
-                  return (
-                    <button
-                      key={letter}
-                      onClick={() => submitAnswer(letter)}
-                      disabled={!!selectedAnswer}
-                      style={{
-                        ...getPlayerAnswerButtonStyle(
-                          letter,
-                          !!selectedAnswer,
-                          selectedAnswer === letter
-                        ),
-                        padding: "10px",
-                        fontSize: 16,
-                        borderRadius: 10,
-                      }}
-                    >
-                      {letter}) {text}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-       
+              {letter}) {text}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+)}
+              
         {/* =========================
    9.9 - Stats / Reveal / Finale PLAYER
 ========================= */}
@@ -4007,53 +4329,62 @@ if (role === "player") {
 
 if (role === "tv") {
 
-  /* =========================
-     10.1 - Helper YouTube embed
-  ========================= */
+/* =========================
+   10.1 - Helper YouTube embed
+========================= */
 
-  const getTvYouTubeEmbedUrl = (url) => {
-    if (!url) return "";
+const getTvYouTubeEmbedUrl = (url) => {
+  if (!url) return "";
 
-    try {
-      const parsed = new URL(String(url).trim());
-      let videoId = "";
+  try {
+    const parsed = new URL(String(url).trim());
+    let videoId = "";
 
-      if (parsed.hostname.includes("youtu.be")) {
-        videoId = parsed.pathname.replace("/", "").split("?")[0];
-      } else if (parsed.hostname.includes("youtube.com")) {
-        if (parsed.pathname.startsWith("/watch")) {
-          videoId = parsed.searchParams.get("v") || "";
-        } else if (parsed.pathname.startsWith("/shorts/")) {
-          videoId = parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
-        } else if (parsed.pathname.startsWith("/embed/")) {
-          videoId = parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
-        }
+    if (parsed.hostname.includes("youtu.be")) {
+      videoId = parsed.pathname.replace("/", "").split("?")[0];
+    } else if (parsed.hostname.includes("youtube.com")) {
+      if (parsed.pathname.startsWith("/watch")) {
+        videoId = parsed.searchParams.get("v") || "";
+      } else if (parsed.pathname.startsWith("/shorts/")) {
+        videoId =
+          parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+      } else if (parsed.pathname.startsWith("/embed/")) {
+        videoId =
+          parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
       }
-
-      if (!videoId) return "";
-
-      const startRaw = parsed.searchParams.get("start") || parsed.searchParams.get("t") || "";
-      const start = String(startRaw).replace("s", "").trim();
-
-      const params = new URLSearchParams({
-        autoplay: "1",
-        controls: "1",
-        rel: "0",
-        modestbranding: "1",
-        playsinline: "1",
-      });
-
-      if (/^\d+$/.test(start)) {
-        params.set("start", start);
-      }
-
-      return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
-    } catch {
-      return "";
     }
-  };
 
+    if (!videoId) return "";
 
+    const startRaw =
+      parsed.searchParams.get("start") ||
+      parsed.searchParams.get("t") ||
+      "";
+
+    const start = String(startRaw).replace("s", "").trim();
+
+    const params = new URLSearchParams({
+      autoplay: "1",
+      controls: "0",
+      rel: "0",
+      modestbranding: "1",
+      playsinline: "1",
+      fs: "0",
+      disablekb: "1",
+      iv_load_policy: "3",
+    });
+
+    if (/^\d+$/.test(start)) {
+      params.set("start", start);
+    }
+
+    return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+  } catch {
+    return "";
+  }
+};
+
+  
   /* =========================
      10.2 - Helper hint media (audio/video/img)
   ========================= */
@@ -4067,138 +4398,152 @@ if (role === "tv") {
   };
 
 
-  /* =========================
-     10.3 - Render media domanda TV
-  ========================= */
+  
+/* =========================
+   10.3 - Render media domanda TV
+========================= */
 
-  const renderTvQuestionMedia = (question, variant = "question") => {
-    if (!question) return null;
+const renderTvQuestionMedia = (question, variant = "question") => {
+  if (!question) return null;
 
-    const hasImage = Boolean(question.image_url) && variant !== "countdown";
-    const hasAudio = Boolean(question.audio_url) && variant !== "countdown";
-    const hasVideo = Boolean(question.video_url) && variant === "question";
-    const hasYouTube = Boolean(question.youtube_url) && variant === "question";
-    const youtubeEmbedUrl = getTvYouTubeEmbedUrl(question.youtube_url);
+  const hasImage = Boolean(question.image_url) && variant !== "countdown";
+  const hasAudio = Boolean(question.audio_url) && variant !== "countdown";
+  const hasVideo = Boolean(question.video_url) && variant === "question";
+  const hasYouTube = Boolean(question.youtube_url) && variant === "question";
+  const youtubeEmbedUrl = getTvYouTubeEmbedUrl(question.youtube_url);
 
-    if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
+  if (!hasImage && !hasAudio && !hasVideo && !hasYouTube) return null;
 
-    const imageMaxHeight =
-      variant === "question" ? "20vh" : variant === "stats" ? "18vh" : "18vh";
+  const imageMaxHeight =
+    variant === "question" ? "20vh" : variant === "stats" ? "18vh" : "18vh";
 
-    const videoHeight = "28vh";
+  const videoHeight = "28vh";
 
-    return (
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 1000,
-          margin: "0 auto",
-          display: "grid",
-          gap: 10,
-          alignContent: "start",
-          justifyItems: "center",
-          minHeight: 0,
-        }}
-      >
-        {hasImage && (
-          <div
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 1000,
+        margin: "0 auto",
+        display: "grid",
+        gap: 10,
+        alignContent: "start",
+        justifyItems: "center",
+        minHeight: 0,
+      }}
+    >
+      {hasImage && (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(255,255,255,0.06)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+          }}
+        >
+          <img
+            src={question.image_url}
+            alt="Immagine domanda"
             style={{
+              display: "block",
               width: "100%",
-              borderRadius: 18,
-              overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.06)",
-              boxShadow: "0 10px 24px rgba(0,0,0,0.20)",
+              maxHeight: imageMaxHeight,
+              objectFit: "contain",
+              background: "rgba(0,0,0,0.18)",
             }}
-          >
-            <img
-              src={question.image_url}
-              alt="Immagine domanda"
-              style={{
-                display: "block",
-                width: "100%",
-                maxHeight: imageMaxHeight,
-                objectFit: "contain",
-                background: "rgba(0,0,0,0.18)",
-              }}
-            />
-          </div>
-        )}
+          />
+        </div>
+      )}
 
-        {hasYouTube && youtubeEmbedUrl && (
-          <div
+      {hasYouTube && youtubeEmbedUrl && (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "black",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+            position: "relative",
+          }}
+        >
+          <iframe
+            src={youtubeEmbedUrl}
+            title="Video YouTube domanda"
             style={{
+              display: "block",
               width: "100%",
-              borderRadius: 18,
-              overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(0,0,0,0.35)",
-              boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+              height: videoHeight,
+              border: "none",
+              background: "black",
             }}
-          >
-            <iframe
-              src={youtubeEmbedUrl}
-              title="Video YouTube domanda"
-              style={{
-                display: "block",
-                width: "100%",
-                height: videoHeight,
-                border: "none",
-                background: "black",
-              }}
-              allow="autoplay; encrypted-media; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-        )}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen={false}
+          />
 
-        {hasVideo && !hasYouTube && (
+          {/* MASCHERA NERA SOPRA IL TITOLO */}
           <div
             style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 54,
+              background: "black",
+              zIndex: 5,
+              pointerEvents: "none",
+            }}
+          />
+        </div>
+      )}
+
+      {hasVideo && !hasYouTube && (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.16)",
+            background: "rgba(0,0,0,0.35)",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+          }}
+        >
+          <video
+            src={question.video_url}
+            controls
+            autoPlay
+            playsInline
+            style={{
+              display: "block",
               width: "100%",
-              borderRadius: 18,
-              overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(0,0,0,0.35)",
-              boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+              maxHeight: videoHeight,
+              background: "black",
             }}
-          >
-            <video
-              src={question.video_url}
-              controls
-              autoPlay
-              playsInline
-              style={{
-                display: "block",
-                width: "100%",
-                maxHeight: videoHeight,
-                background: "black",
-              }}
-            />
-          </div>
-        )}
+          />
+        </div>
+      )}
 
-        {hasAudio && !hasVideo && !hasYouTube && (
-          <div
-            style={{
-              width: "fit-content",
-              maxWidth: "100%",
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.07)",
-              fontSize: "clamp(15px, 1.25vw, 22px)",
-              fontWeight: "bold",
-            }}
-          >
-            🔊 Audio domanda in riproduzione
-          </div>
-        )}
-      </div>
-    );
-  };
-
-
+      {hasAudio && !hasVideo && !hasYouTube && (
+        <div
+          style={{
+            width: "fit-content",
+            maxWidth: "100%",
+            padding: "8px 16px",
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(255,255,255,0.07)",
+            fontSize: "clamp(15px, 1.25vw, 22px)",
+            fontWeight: "bold",
+          }}
+        >
+          🔊 Audio domanda in riproduzione
+        </div>
+      )}
+    </div>
+  );
+};
   /* =========================
      10.4 - Layout base TV (contenitore principale)
   ========================= */
@@ -4721,78 +5066,68 @@ if (role === "tv") {
       overflow: "hidden",
     }}
   >
-    <div style={{ textAlign: "center", marginBottom: 14, flexShrink: 0 }}>
+    {/* HEADER */}
+    <div style={{ textAlign: "center", marginBottom: 6, flexShrink: 0 }}>
       <h1
         style={{
-          fontSize: "clamp(36px, 4vw, 64px)",
-          margin: "0 0 8px 0",
+          fontSize: "clamp(28px, 3vw, 48px)",
+          margin: 0,
           lineHeight: 1.05,
         }}
       >
         🍻 {getGameTitle(game)}
       </h1>
-      <div style={{ fontSize: "clamp(18px, 1.9vw, 28px)", opacity: 0.92 }}>
-        Inquadra il QR e unisciti alla partita
+
+      <div style={{ fontSize: "clamp(14px, 1.4vw, 22px)", opacity: 0.9 }}>
+        Inquadra il QR e unisciti
       </div>
     </div>
 
+    {/* GRID */}
     <div
       style={{
         flex: 1,
         minHeight: 0,
         display: "grid",
-        gridTemplateColumns: "0.92fr 1.08fr",
-        gap: 18,
-        overflow: "hidden",
+        gridTemplateColumns: "0.8fr 1.2fr",
+        gap: 12,
       }}
     >
+      {/* ===== SINISTRA (QR) ===== */}
       <div
         style={{
           ...panelStyle,
-          padding: 14,
+          padding: 10,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: 10,
-          overflow: "hidden",
-          minHeight: 0,
+          gap: 6,
         }}
       >
         <div
           style={{
             background: "white",
-            padding: 12,
-            borderRadius: 18,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
-            width: "fit-content",
-            maxWidth: "100%",
-            flexShrink: 1,
+            padding: 6,
+            borderRadius: 14,
           }}
         >
           <QRCodeSVG
             value={PLAYER_JOIN_URL}
-            size={tvQrSize}
+            size={170}
             style={{
               display: "block",
-              width: `${tvQrSize}px`,
-              height: `${tvQrSize}px`,
-              maxWidth: "100%",
-              maxHeight: "100%",
+              width: "170px",
+              height: "170px",
             }}
           />
         </div>
 
         <div
           style={{
-            marginTop: 8,
-            fontSize: "clamp(18px, 1.6vw, 28px)",
+            fontSize: "clamp(14px, 1.2vw, 20px)",
             fontWeight: "bold",
             textAlign: "center",
-            lineHeight: 1.1,
           }}
         >
           📱 Inquadra per partecipare
@@ -4800,69 +5135,50 @@ if (role === "tv") {
 
         <div
           style={{
-            marginTop: 6,
-            fontSize: "clamp(15px, 1.2vw, 22px)",
+            fontSize: "clamp(13px, 1vw, 18px)",
             color: GOLD,
             fontWeight: "bold",
-            textAlign: "center",
-            lineHeight: 1.1,
           }}
         >
           Codice: {GAME_CODE}
         </div>
-
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: "clamp(11px, 0.9vw, 15px)",
-            opacity: 0.72,
-            textAlign: "center",
-            maxWidth: "100%",
-            wordBreak: "break-all",
-          }}
-        >
-          {PLAYER_JOIN_URL}
-        </div>
       </div>
 
+      {/* ===== DESTRA (GIOCATORI) ===== */}
       <div
         style={{
           ...panelStyle,
-          padding: 18,
+          padding: 12,
           display: "flex",
           flexDirection: "column",
           minHeight: 0,
-          overflow: "hidden",
         }}
       >
         <div
           style={{
             textAlign: "center",
             fontWeight: "bold",
-            fontSize: "clamp(24px, 2vw, 34px)",
-            marginBottom: 14,
+            fontSize: "clamp(20px, 1.6vw, 28px)",
+            marginBottom: 8,
             flexShrink: 0,
           }}
         >
-          Giocatori entrati ({players.length})
+          Giocatori ({players.length})
         </div>
 
         {players.length === 0 ? (
           <div
             style={{
               flex: 1,
-              minHeight: 0,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              textAlign: "center",
-              borderRadius: 16,
+              borderRadius: 14,
               background: "rgba(255,255,255,0.05)",
               border: "1px solid rgba(255,255,255,0.12)",
-              fontSize: "clamp(24px, 2vw, 34px)",
             }}
           >
-            Nessun giocatore ancora collegato
+            Nessuno collegato
           </div>
         ) : (
           <div
@@ -4870,60 +5186,27 @@ if (role === "tv") {
               flex: 1,
               minHeight: 0,
               display: "grid",
-              gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, minmax(0, 1fr))`,
-              gap: 10,
-              alignContent: "start",
+              gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, 1fr)`,
+              gap: 8,
               overflow: "hidden",
             }}
           >
-            {players.map((player, index) => (
+            {players.map((p, i) => (
               <div
-                key={player.id}
+                key={p.id}
                 style={{
-                  background:
-                    index < 3
-                      ? "rgba(255,215,64,0.12)"
-                      : "rgba(255,255,255,0.06)",
-                  border:
-                    index < 3
-                      ? "1px solid rgba(255,215,64,0.32)"
-                      : "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 12,
                   padding: tvLobbyPlayerPadding,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  minWidth: 0,
+                  fontSize: tvLobbyPlayerFontSize,
+                  fontWeight: "bold",
                   overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: tvLobbyPlayerFontSize,
-                    fontWeight: "bold",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    minWidth: 0,
-                    flex: 1,
-                  }}
-                  title={player.name}
-                >
-                  {index + 1}. {player.name}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: Math.max(12, tvLobbyPlayerFontSize - 8),
-                    color: GOLD,
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  entrato
-                </div>
+                {i + 1}. {p.name}
               </div>
             ))}
           </div>
@@ -4932,6 +5215,7 @@ if (role === "tv") {
     </div>
   </div>
 )}
+
 
 {/* =========================
    10.12 - Classifica provvisoria TV con reveal completo dall'ultimo al primo
@@ -5522,126 +5806,228 @@ if (role === "tv") {
 ===================================================== */
 
 if (role === "host") {
+  const hostSortedPlayers = [...(players || [])].sort((a, b) => {
+    const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+  });
+
   return (
     <div
       style={{
-        padding: 20,
-        color: "white",
-        background: "#020617",
-        minHeight: "100vh",
+        ...containerStyle,
+        height: "100dvh",
+        maxHeight: "100dvh",
         overflowY: "auto",
+        overflowX: "hidden",
+        padding: 20,
+        background: "#020617",
+        boxSizing: "border-box",
+        WebkitOverflowScrolling: "touch",
       }}
     >
-      <h1 style={{ fontSize: 28, marginBottom: 10 }}>
+      <h1 style={{ fontSize: 32, marginBottom: 10 }}>
         🎤 HOST PANEL
       </h1>
 
-      <div style={{ marginBottom: 20 }}>
-        <strong>Fase:</strong> {effectivePhase}
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <strong>Giocatori:</strong> {players.length}
+      {/* ===== INFO ===== */}
+      <div
+        style={{
+          ...panelStyle,
+          marginBottom: 18,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <div><b>Fase:</b> {effectivePhase}</div>
+        <div><b>Domanda:</b> {Number(game?.current_question_index || 0) + 1} / {questions.length}</div>
+        <div><b>Timer:</b> {hostDisplayedTime}s</div>
+        <div><b>Giocatori:</b> {players.length}</div>
+        <div><b>Risposte:</b> {answerStats.totalAnswered} / {answerStats.totalPlayers}</div>
       </div>
 
       {/* ===== CONTROLLI ===== */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+      <div style={{ ...panelStyle, marginBottom: 18 }}>
+        <h2 style={{ marginTop: 0 }}>Controlli</h2>
 
-        {/* ===== IMPORT CSV ===== */}
-        <label
-          style={{
-            ...buttonStyle,
-            cursor: "pointer",
-            background: "linear-gradient(135deg,#2563eb,#1e3a8a)",
-          }}
-        >
-          📁 Importa CSV
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => importCsvQuestions(e.target.files?.[0])}
-            style={{ display: "none" }}
-          />
-        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <label style={{ ...buttonStyle, cursor: "pointer" }}>
+            📁 CSV
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => importCsvQuestions(e.target.files?.[0])}
+              style={{ display: "none" }}
+            />
+          </label>
 
-        {/* ===== AVVIO QUIZ ===== */}
-        <button onClick={startQuiz} style={buttonStyle}>
-          ▶️ Avvia Quiz
-        </button>
+          <button onClick={startQuiz} style={buttonStyle}>▶️ Avvia</button>
+          <button onClick={nextQuestion} style={buttonStyle}>➡️ Next</button>
+          <button onClick={revealAnswer} style={buttonStyle}>💡 Risposta</button>
+          <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>🏆 Classifica</button>
 
-        <button onClick={nextQuestion} style={buttonStyle}>
-          ➡️ Prossima domanda
-        </button>
+          <button onClick={startStop10Game} style={buttonStyle}>
+            ⏱ Stop10
+          </button>
 
-        <button onClick={revealAnswer} style={buttonStyle}>
-          💡 Mostra risposta
-        </button>
+          <button onClick={resetAll} style={{ ...buttonStyle, background: "#ef4444" }}>
+            🔄 Reset
+          </button>
+        </div>
 
-        {/* ===== CLASSIFICA TV ===== */}
-        <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>
-          🏆 Mostra / Nascondi classifica
-        </button>
-
-        {/* ===== STOP10 ===== */}
-        <button
-          onClick={startStop10Game}
-          style={{
-            ...buttonStyle,
-            background: "linear-gradient(135deg,#f59e0b,#b45309)",
-          }}
-        >
-          ⏱ Avvia Stop10
-        </button>
-
-        <button
-          onClick={finishStop10Game}
-          style={{
-            ...buttonStyle,
-            background: "linear-gradient(135deg, #22c55e 0%, #15803d 100%)",
-          }}
-        >
-          🏆 Risultati Stop10
-        </button>
-
-        {/* ===== EXPORT CSV CLASSIFICA ===== */}
-        <button
-          onClick={downloadLeaderboardCsv}
-          style={{
-            ...buttonStyle,
-            background: "linear-gradient(135deg,#06b6d4,#0e7490)",
-          }}
-        >
-          📊 Esporta classifica CSV
-        </button>
-
-        {/* ===== RESET ===== */}
-        <button
-          onClick={resetAll}
-          style={{
-            ...buttonStyle,
-            background: "linear-gradient(135deg,#ef4444,#7f1d1d)",
-          }}
-        >
-          🔄 Reset completo
-        </button>
+        {status && (
+          <div style={{ marginTop: 10 }}>
+            <b>Status:</b> {status}
+          </div>
+        )}
       </div>
 
-      {/* ===== STATUS ===== */}
-      {status && (
-        <div
-          style={{
-            marginTop: 20,
-            padding: 10,
-            background: "rgba(255,255,255,0.08)",
-            borderRadius: 10,
-          }}
-        >
-          {status}
+{/* ===== REPORT CONTROLLO MEDIA CSV ===== */}
+<div style={{ ...panelStyle, marginBottom: 18 }}>
+  <h2 style={{ marginTop: 0 }}>🔍 Controllo media CSV</h2>
+
+  {mediaCheckRunning ? (
+    <div style={{ color: GOLD, fontWeight: "bold" }}>
+      Controllo collegamenti in corso...
+    </div>
+  ) : mediaCheckReport.length === 0 ? (
+    <div style={{ opacity: 0.85 }}>
+      Nessun media controllato oppure nessun problema trovato.
+    </div>
+  ) : (
+    <div style={{ display: "grid", gap: 8 }}>
+      {mediaCheckReport.map((item, index) => {
+        const color =
+          item.status === "ok"
+            ? "#22c55e"
+            : item.status === "warning"
+            ? "#facc15"
+            : "#ef4444";
+
+        const icon =
+          item.status === "ok"
+            ? "✅"
+            : item.status === "warning"
+            ? "⚠️"
+            : "❌";
+
+        return (
+          <div
+            key={`${item.position}-${item.type}-${index}`}
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(255,255,255,0.06)",
+              border: `1px solid ${color}`,
+            }}
+          >
+            <div style={{ fontWeight: "bold", color }}>
+              {icon} Domanda {Number(item.position) + 1} — {item.type.toUpperCase()}
+            </div>
+
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              {item.message}
+            </div>
+
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.7,
+                marginTop: 4,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={item.url}
+            >
+              {item.url}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+</div>
+
+      {/* ===== GRID ===== */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr 1fr",
+          gap: 18,
+        }}
+      >
+        {/* ===== DOMANDA ===== */}
+        <div style={panelStyle}>
+          <h2>🎯 Domanda</h2>
+
+          {!currentQuestion ? (
+            <div>Nessuna domanda</div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 10, fontSize: 22, fontWeight: "bold" }}>
+                {currentQuestion.question}
+              </div>
+
+              {renderQuestionMedia(currentQuestion, "host")}
+
+              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                {["A", "B", "C", "D"].map((l) => {
+                  const text = currentQuestion[`option_${l.toLowerCase()}`];
+                  if (!text) return null;
+
+                  return (
+                    <div key={l} style={{ padding: 10, borderRadius: 10, background: "#1e293b" }}>
+                      <b>{l})</b> {text}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
-      )}
+
+        {/* ===== DESTRA ===== */}
+        <div style={{ display: "grid", gap: 18 }}>
+          {/* ===== RISPOSTE ===== */}
+          <div style={panelStyle}>
+            <h2>📊 Risposte</h2>
+
+            {["A", "B", "C", "D"].map((l) => {
+              const stat = answerStats[l];
+
+              return (
+                <div key={l} style={{ marginBottom: 8 }}>
+                  {l}: {stat.count} ({stat.percent}%)
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ===== CLASSIFICA ===== */}
+          <div style={panelStyle}>
+            <h2>🏆 Classifica</h2>
+
+            {hostSortedPlayers.map((p, i) => (
+              <div key={p.id}>
+                {i + 1}. {p.name} — {p.score}
+              </div>
+            ))}
+          </div>
+
+          {/* ===== EVENTI ===== */}
+          <div style={panelStyle}>
+            <h2>📡 Eventi</h2>
+
+            {liveEvents.map((e) => (
+              <div key={e.id}>{e.event_text}</div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 }
-
