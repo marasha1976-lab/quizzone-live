@@ -232,15 +232,17 @@ function formatSeconds(ms) {
 function getQuestionMediaHint(question) {
   if (!question) return "";
 
-  if (question.youtube_url || question.video_url) {
-    return "🎬 GUARDA IN TV";
-  }
+  const type = String(question.type || "").trim().toLowerCase();
 
-  if (question.audio_url) {
+  if (type === "audio" || question.audio_url) {
     return "🎧 ASCOLTA BENE";
   }
 
-  if (question.image_url) {
+  if (type === "video" || question.youtube_url || question.video_url) {
+    return "🎬 GUARDA IN TV";
+  }
+
+  if (type === "image" || question.image_url) {
     return "🖼️ GUARDA ATTENTAMENTE";
   }
 
@@ -4395,19 +4397,30 @@ const getTvYouTubeEmbedUrl = (url) => {
   }
 };
 
-  
   /* =========================
-     10.2 - Helper hint media (audio/video/img)
-  ========================= */
+   10.2 - Helper hint media (audio/video/img)
+========================= */
 
-  const getTvMediaHint = (question) => {
-    if (!question) return "";
-    if (question.audio_url) return "🎧 ASCOLTA BENE";
-    if (question.youtube_url || question.video_url) return "🎬 GUARDA ATTENTAMENTE";
-    if (question.image_url) return "🖼️ GUARDA ATTENTAMENTE";
-    return "";
-  };
+const getTvMediaHint = (question) => {
+  if (!question) return "";
 
+  const type = String(question.type || "").trim().toLowerCase();
+
+  if (type === "audio" || question.audio_url) {
+    return "🎧 ASCOLTA BENE";
+  }
+
+  if (type === "video" || question.youtube_url || question.video_url) {
+    return "🎬 GUARDA ATTENTAMENTE";
+  }
+
+  if (type === "image" || question.image_url) {
+    return "🖼️ GUARDA ATTENTAMENTE";
+  }
+
+  return "";
+};
+  
 /* =========================
    10.3 - Render media domanda TV
 ========================= */
