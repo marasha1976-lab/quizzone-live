@@ -476,6 +476,10 @@ export default function App() {
   const [roundName, setRoundName] = useState("");
 const [mediaCheckReport, setMediaCheckReport] = useState([]);
 const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
+  const [liveCsvRow, setLiveCsvRow] = useState("");
+  const [liveCsvPreview, setLiveCsvPreview] = useState(null);
+  const [liveCsvError, setLiveCsvError] = useState("");
+  const [liveCsvLoading, setLiveCsvLoading] = useState(false);
 
   const [playerName, setPlayerName] = useState("");
   const [joinedPlayer, setJoinedPlayer] = useState(null);
@@ -1053,6 +1057,7 @@ async function loadAll({ silent = false } = {}) {
   }
 }
 
+
 /* =====================================================
    PARTE 5B - IMPORT CSV, NORMALIZZAZIONE E CONTROLLO MEDIA
 ===================================================== */
@@ -1069,7 +1074,8 @@ async function checkCsvMediaLinks(rows) {
             type,
             url,
             status: "warning",
-            message: "Controllo scaduto: potrebbe funzionare, ma il server risponde lento",
+            message:
+              "Controllo scaduto: potrebbe funzionare, ma il server risponde lento",
           });
         }, TIMEOUT_MS);
       }),
@@ -1110,6 +1116,7 @@ async function checkCsvMediaLinks(rows) {
     return withTimeout(
       new Promise((resolve) => {
         const audio = document.createElement("audio");
+
         audio.preload = "metadata";
         audio.muted = true;
 
@@ -1152,6 +1159,7 @@ async function checkCsvMediaLinks(rows) {
     return withTimeout(
       new Promise((resolve) => {
         const video = document.createElement("video");
+
         video.preload = "metadata";
         video.muted = true;
         video.playsInline = true;
@@ -1179,7 +1187,8 @@ async function checkCsvMediaLinks(rows) {
             type: "video",
             url,
             status: "error",
-            message: "Video non caricabile. Se è YouTube, va messo in youtube_url, non in video_url",
+            message:
+              "Video non caricabile. Se è YouTube, va messo in youtube_url, non in video_url",
           });
         };
 
@@ -1205,11 +1214,19 @@ async function checkCsvMediaLinks(rows) {
         }
 
         if (parsed.pathname.startsWith("/shorts/")) {
-          return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+          return (
+            parsed.pathname
+              .split("/shorts/")[1]
+              ?.split("/")[0] || ""
+          );
         }
 
         if (parsed.pathname.startsWith("/embed/")) {
-          return parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+          return (
+            parsed.pathname
+              .split("/embed/")[1]
+              ?.split("/")[0] || ""
+          );
         }
       }
 
@@ -1231,6 +1248,7 @@ async function checkCsvMediaLinks(rows) {
             status: "error",
             message: "Link YouTube non valido",
           });
+
           return;
         }
 
@@ -1241,7 +1259,8 @@ async function checkCsvMediaLinks(rows) {
             type: "youtube",
             url,
             status: "ok",
-            message: "Video YouTube trovato. Embed da verificare in TV",
+            message:
+              "Video YouTube trovato. Embed da verificare in TV",
           });
         };
 
@@ -1250,7 +1269,8 @@ async function checkCsvMediaLinks(rows) {
             type: "youtube",
             url,
             status: "warning",
-            message: "ID YouTube valido, ma thumbnail non verificata",
+            message:
+              "ID YouTube valido, ma thumbnail non verificata",
           });
         };
 
@@ -1289,40 +1309,183 @@ function normalizeCsvRows(rows) {
   return rows
     .filter((row) => row.question && row.correct_answer)
     .map((row, index) => {
-      const type = String(row.type || "multiple").trim().toLowerCase();
+      const type = String(
+        row.type || "multiple"
+      )
+        .trim()
+        .toLowerCase();
+
       const cleanedType =
-  type === "truefalse" || type === "vero_falso"
-    ? "truefalse"
-    : ["multiple", "image", "audio", "video"].includes(type)
-    ? type
-    : "multiple";
+        type === "truefalse" || type === "vero_falso"
+          ? "truefalse"
+          : ["multiple", "image", "audio", "video"].includes(type)
+          ? type
+          : "multiple";
+
       return {
         position: index,
         round: Number(row.round || 1),
         type: cleanedType,
-        question: String(row.question || "").trim(),
+
+        question: String(
+          row.question || ""
+        ).trim(),
+
         option_a:
           cleanedType === "truefalse"
             ? String(row.option_a || "Vero").trim() || "Vero"
             : String(row.option_a || "").trim(),
+
         option_b:
           cleanedType === "truefalse"
             ? String(row.option_b || "Falso").trim() || "Falso"
             : String(row.option_b || "").trim(),
+
         option_c:
-          cleanedType === "truefalse" ? null : String(row.option_c || "").trim() || null,
+          cleanedType === "truefalse"
+            ? null
+            : String(row.option_c || "").trim() || null,
+
         option_d:
-          cleanedType === "truefalse" ? null : String(row.option_d || "").trim() || null,
-        correct_answer: String(row.correct_answer || "").trim().toUpperCase(),
-        explanation: String(row.explanation || "").trim(),
+          cleanedType === "truefalse"
+            ? null
+            : String(row.option_d || "").trim() || null,
+
+        correct_answer: String(
+          row.correct_answer || ""
+        )
+          .trim()
+          .toUpperCase(),
+
+        explanation: String(
+          row.explanation || ""
+        ).trim(),
+
         time_limit: COUNTDOWN_DURATION,
+
         points: Number(row.points || 100),
-        image_url: String(row.image_url || "").trim(),
-        audio_url: String(row.audio_url || "").trim(),
-        video_url: String(row.video_url || "").trim(),
-        youtube_url: String(row.youtube_url || "").trim(),
+
+        image_url: String(
+          row.image_url || ""
+        ).trim(),
+
+        audio_url: String(
+          row.audio_url || ""
+        ).trim(),
+
+        video_url: String(
+          row.video_url || ""
+        ).trim(),
+
+        youtube_url: String(
+          row.youtube_url || ""
+        ).trim(),
       };
     });
+}
+
+function parseSingleLiveCsvRow(
+  csvText,
+  currentQuestionsLength = 0
+) {
+  const text = String(csvText || "").trim();
+
+  if (!text) {
+    throw new Error("Incolla una riga CSV.");
+  }
+
+  const hasHeader = text
+    .split(/\r?\n/)[0]
+    .toLowerCase()
+    .includes("question");
+
+  const csvWithHeader = hasHeader
+    ? text
+    : `position,round,type,question,option_a,option_b,option_c,option_d,correct_answer,explanation,time_limit,points,image_url,audio_url,video_url,youtube_url
+${text}`;
+
+  const parsed = Papa.parse(csvWithHeader, {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  if (parsed.errors?.length) {
+    throw new Error(
+      "CSV non valido: controlla virgole, virgolette e colonne."
+    );
+  }
+
+  const rows = normalizeCsvRows(parsed.data || []);
+
+  if (!rows.length) {
+    throw new Error(
+      "Nessuna domanda valida trovata nella riga CSV."
+    );
+  }
+
+  if (rows.length > 1) {
+    throw new Error(
+      "Incolla una sola domanda alla volta."
+    );
+  }
+
+  return {
+    ...rows[0],
+    position: currentQuestionsLength,
+  };
+}
+
+async function addLiveCsvQuestion() {
+  try {
+    setLiveCsvError("");
+
+    if (!liveCsvRow.trim()) {
+      setLiveCsvError("Incolla una riga CSV.");
+      return;
+    }
+
+    if (!game?.id) {
+      setLiveCsvError("Game non caricato.");
+      return;
+    }
+
+    setLiveCsvLoading(true);
+
+    const parsedQuestion = parseSingleLiveCsvRow(
+      liveCsvRow,
+      questions.length
+    );
+
+    const questionToInsert = {
+      ...parsedQuestion,
+      game_id: game.id,
+      position: questions.length,
+    };
+
+    const { error } = await supabase
+      .from("questions")
+      .insert([questionToInsert]);
+
+    if (error) throw error;
+
+    await loadAll();
+
+    setLiveCsvRow("");
+    setLiveCsvError("");
+
+    setStatus(
+      "Domanda CSV live aggiunta in fondo al quiz."
+    );
+  } catch (err) {
+    console.error(err);
+
+    setLiveCsvError(
+      err?.message ||
+        "Errore aggiunta domanda CSV live."
+    );
+  } finally {
+    setLiveCsvLoading(false);
+  }
 }
 
 async function importCsvQuestions(file) {
@@ -1335,9 +1498,12 @@ async function importCsvQuestions(file) {
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
+
     complete: async (results) => {
       try {
-        const parsedRows = normalizeCsvRows(results.data || []);
+        const parsedRows = normalizeCsvRows(
+          results.data || []
+        );
 
         if (!parsedRows.length) {
           setStatus("CSV vuoto o non valido");
@@ -1345,19 +1511,35 @@ async function importCsvQuestions(file) {
         }
 
         setMediaCheckRunning(true);
-        const mediaReport = await checkCsvMediaLinks(parsedRows);
+
+        const mediaReport =
+          await checkCsvMediaLinks(parsedRows);
+
         setMediaCheckReport(mediaReport);
+
         setMediaCheckRunning(false);
 
-        await supabase.from("answers").delete().eq("game_id", game.id);
-        await supabase.from("questions").delete().eq("game_id", game.id);
+        await supabase
+          .from("answers")
+          .delete()
+          .eq("game_id", game.id);
 
-        const rowsToInsert = parsedRows.map((row) => ({
-          game_id: game.id,
-          ...row,
-        }));
+        await supabase
+          .from("questions")
+          .delete()
+          .eq("game_id", game.id);
 
-        const { error } = await supabase.from("questions").insert(rowsToInsert);
+        const rowsToInsert = parsedRows.map(
+          (row) => ({
+            game_id: game.id,
+            ...row,
+          })
+        );
+
+        const { error } = await supabase
+          .from("questions")
+          .insert(rowsToInsert);
+
         if (error) throw error;
 
         await supabase
@@ -1385,6 +1567,7 @@ async function importCsvQuestions(file) {
         setSelectedAnswer(null);
         setJollyUsed(false);
         setFinalRevealIndex(-1);
+
         setStop10Results([]);
         setStop10PlayerStopped(false);
         setStop10PlayerResult(null);
@@ -1398,13 +1581,21 @@ async function importCsvQuestions(file) {
         setAnswers([]);
 
         await loadAll();
-        setStatus(`Import completato: ${parsedRows.length} domande`);
+
+        setStatus(
+          `Import completato: ${parsedRows.length} domande`
+        );
       } catch (error) {
         console.error(error);
+
         setMediaCheckRunning(false);
-        setStatus("Errore import CSV: " + error.message);
+
+        setStatus(
+          "Errore import CSV: " + error.message
+        );
       }
     },
+
     error: () => {
       setMediaCheckRunning(false);
       setStatus("Errore lettura CSV");
@@ -2303,6 +2494,58 @@ setMediaCheckRunning(false);
     }
   }
 
+  /* =========================
+     6.13 - Elimina singola domanda e riordina
+  ========================= */
+
+  async function deleteQuestionFromQuiz(questionId) {
+    if (!game?.id || !questionId) return;
+
+    const ok = window.confirm(
+      "Vuoi eliminare questa domanda dal quiz? Verranno eliminate anche le risposte collegate."
+    );
+
+    if (!ok) return;
+
+    try {
+      const remainingQuestions = [...questions]
+        .filter((q) => q.id !== questionId)
+        .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+
+      await supabase.from("answers").delete().eq("question_id", questionId);
+      await supabase.from("questions").delete().eq("id", questionId);
+
+      for (let index = 0; index < remainingQuestions.length; index += 1) {
+        await supabase
+          .from("questions")
+          .update({ position: index })
+          .eq("id", remainingQuestions[index].id);
+      }
+
+      const safeCurrentIndex = Math.min(
+        Number(game.current_question_index || 0),
+        Math.max(0, remainingQuestions.length - 1)
+      );
+
+      await supabase
+        .from("games")
+        .update({
+          current_question_index: safeCurrentIndex,
+          phase: remainingQuestions.length === 0 ? "lobby" : game.phase,
+        })
+        .eq("id", game.id);
+
+      await addLiveEvent(game.id, "question_deleted", "🗑️ Domanda eliminata dal quiz");
+
+      await loadAll({ silent: true });
+      setStatus("Domanda eliminata e quiz riordinato");
+    } catch (error) {
+      console.error(error);
+      setStatus("Errore eliminazione domanda: " + error.message);
+    }
+  }
+
+
 /* =====================================================
    PARTE 7 - USEEFFECT, REALTIME E SINCRONIZZAZIONI
 ===================================================== */
@@ -2662,6 +2905,17 @@ useEffect(() => {
   }
 }, [game?.id, game?.current_question_index, effectivePhase]);
 
+/* =========================
+   7.6B - Reset stato player Stop10 su nuovo round
+========================= */
+
+useEffect(() => {
+  if (role !== "player") return;
+
+  setStop10PlayerStopped(false);
+  setStop10PlayerResult(null);
+  stop10LockRef.current = false;
+}, [role, stop10RoundId]);
 
 /* =========================
    7.7 - Auto clear feedback risposta
@@ -5923,6 +6177,71 @@ if (role === "host") {
     return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
   });
 
+  const getHostYoutubeId = (url) => {
+    try {
+      const parsed = new URL(String(url || "").trim());
+
+      if (parsed.hostname.includes("youtu.be")) {
+        return parsed.pathname.replace("/", "").split("?")[0];
+      }
+
+      if (parsed.hostname.includes("youtube.com")) {
+        if (parsed.pathname.startsWith("/watch")) {
+          return parsed.searchParams.get("v") || "";
+        }
+
+        if (parsed.pathname.startsWith("/shorts/")) {
+          return parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+        }
+
+        if (parsed.pathname.startsWith("/embed/")) {
+          return parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+        }
+      }
+
+      return "";
+    } catch {
+      return "";
+    }
+  };
+
+  const getMediaChecksForQuestion = (question) => {
+    return mediaCheckReport.filter(
+      (item) => Number(item.position) === Number(question.position)
+    );
+  };
+
+  const getQuestionMediaStatus = (question) => {
+    const checks = getMediaChecksForQuestion(question);
+
+    if (!checks.length) {
+      if (
+        question.image_url ||
+        question.audio_url ||
+        question.video_url ||
+        question.youtube_url
+      ) {
+        return { label: "⚪ Non controllato", color: "#94a3b8" };
+      }
+
+      return { label: "Nessun media", color: "#94a3b8" };
+    }
+
+    if (checks.some((c) => c.status === "error")) {
+      return { label: "❌ Problema media", color: "#ef4444" };
+    }
+
+    if (checks.some((c) => c.status === "warning")) {
+      return { label: "⚠️ Da verificare", color: "#facc15" };
+    }
+
+    return { label: "✅ Media OK", color: "#22c55e" };
+  };
+
+  const hostQuestionsSorted = [...(questions || [])].sort(
+    (a, b) => Number(a.position || 0) - Number(b.position || 0)
+  );
+
   return (
     <div
       style={{
@@ -5941,7 +6260,6 @@ if (role === "host") {
         🎤 HOST PANEL
       </h1>
 
-      {/* ===== INFO ===== */}
       <div
         style={{
           ...panelStyle,
@@ -5958,7 +6276,6 @@ if (role === "host") {
         <div><b>Risposte:</b> {answerStats.totalAnswered} / {answerStats.totalPlayers}</div>
       </div>
 
-      {/* ===== CONTROLLI ===== */}
       <div style={{ ...panelStyle, marginBottom: 18 }}>
         <h2 style={{ marginTop: 0 }}>Controlli</h2>
 
@@ -5977,9 +6294,10 @@ if (role === "host") {
           <button onClick={nextQuestion} style={buttonStyle}>➡️ Next</button>
           <button onClick={revealAnswer} style={buttonStyle}>💡 Risposta</button>
           <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>🏆 Classifica</button>
+          <button onClick={startStop10Game} style={buttonStyle}>⏱ Stop10</button>
 
-          <button onClick={startStop10Game} style={buttonStyle}>
-            ⏱ Stop10
+          <button onClick={downloadLeaderboardCsv} style={buttonStyle}>
+            ⬇️ Scarica classifica
           </button>
 
           <button onClick={resetAll} style={{ ...buttonStyle, background: "#ef4444" }}>
@@ -5995,73 +6313,299 @@ if (role === "host") {
       </div>
 
 {/* ===== REPORT CONTROLLO MEDIA CSV ===== */}
+
 <div style={{ ...panelStyle, marginBottom: 18 }}>
-  <h2 style={{ marginTop: 0 }}>🔍 Controllo media CSV</h2>
+  <h2 style={{ marginTop: 0 }}>
+    ➕ Aggiungi domanda CSV live
+  </h2>
 
-  {mediaCheckRunning ? (
-    <div style={{ color: GOLD, fontWeight: "bold" }}>
-      Controllo collegamenti in corso...
-    </div>
-  ) : mediaCheckReport.length === 0 ? (
-    <div style={{ opacity: 0.85 }}>
-      Nessun media controllato oppure nessun problema trovato.
-    </div>
-  ) : (
-    <div style={{ display: "grid", gap: 8 }}>
-      {mediaCheckReport.map((item, index) => {
-        const color =
-          item.status === "ok"
-            ? "#22c55e"
-            : item.status === "warning"
-            ? "#facc15"
-            : "#ef4444";
+  <div
+    style={{
+      fontSize: 14,
+      opacity: 0.8,
+      marginBottom: 12,
+    }}
+  >
+    Incolla UNA riga CSV completa.
+    Verrà aggiunta in fondo al quiz senza resettare la partita.
+  </div>
 
-        const icon =
-          item.status === "ok"
-            ? "✅"
-            : item.status === "warning"
-            ? "⚠️"
-            : "❌";
+  <textarea
+    value={liveCsvRow}
+    onChange={(e) => setLiveCsvRow(e.target.value)}
+    placeholder="position,round,type,question,option_a,option_b,option_c,option_d,correct_answer,explanation,time_limit,points,image_url,audio_url,video_url,youtube_url"
+    style={{
+      width: "100%",
+      minHeight: 120,
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.15)",
+      background: "#0f172a",
+      color: "white",
+      padding: 12,
+      resize: "vertical",
+      boxSizing: "border-box",
+      fontFamily: "monospace",
+      marginBottom: 12,
+    }}
+  />
 
-        return (
-          <div
-            key={`${item.position}-${item.type}-${index}`}
-            style={{
-              padding: 10,
-              borderRadius: 10,
-              background: "rgba(255,255,255,0.06)",
-              border: `1px solid ${color}`,
-            }}
-          >
-            <div style={{ fontWeight: "bold", color }}>
-              {icon} Domanda {Number(item.position) + 1} — {item.type.toUpperCase()}
-            </div>
+  <button
+    onClick={addLiveCsvQuestion}
+    disabled={liveCsvLoading}
+    style={{
+      ...buttonStyle,
+      opacity: liveCsvLoading ? 0.5 : 1,
+    }}
+  >
+    ➕ Aggiungi in fondo
+  </button>
 
-            <div style={{ fontSize: 13, marginTop: 4 }}>
-              {item.message}
-            </div>
-
-            <div
-              style={{
-                fontSize: 12,
-                opacity: 0.7,
-                marginTop: 4,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={item.url}
-            >
-              {item.url}
-            </div>
-          </div>
-        );
-      })}
+  {liveCsvError && (
+    <div
+      style={{
+        marginTop: 12,
+        color: "#ef4444",
+        fontWeight: "bold",
+      }}
+    >
+      ❌ {liveCsvError}
     </div>
   )}
 </div>
+      
+      {/* ===== LISTA DOMANDE CON PREVIEW ===== */}
+      <div style={{ ...panelStyle, marginBottom: 18 }}>
+        <h2 style={{ marginTop: 0 }}>🧪 Preview domande importate</h2>
 
-      {/* ===== GRID ===== */}
+        {hostQuestionsSorted.length === 0 ? (
+          <div style={{ opacity: 0.85 }}>
+            Nessuna domanda caricata.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {hostQuestionsSorted.map((q) => {
+              const statusInfo = getQuestionMediaStatus(q);
+              const youtubeId = getHostYoutubeId(q.youtube_url);
+              const checks = getMediaChecksForQuestion(q);
+
+              return (
+                <div
+                  key={q.id || q.position}
+                  style={{
+                    padding: 14,
+                    borderRadius: 16,
+                    background:
+                      Number(q.position) === Number(game?.current_question_index || 0)
+                        ? "rgba(124,58,237,0.22)"
+                        : "rgba(255,255,255,0.06)",
+                    border:
+                      Number(q.position) === Number(game?.current_question_index || 0)
+                        ? "1px solid rgba(168,85,247,0.85)"
+                        : "1px solid rgba(255,255,255,0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      gap: 12,
+                      alignItems: "start",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          alignItems: "center",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <span style={{ fontWeight: "bold", color: GOLD }}>
+                          #{Number(q.position) + 1}
+                        </span>
+
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "rgba(255,255,255,0.10)",
+                            fontSize: 12,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          {String(q.type || "multiple").toUpperCase()}
+                        </span>
+
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "rgba(255,255,255,0.10)",
+                            color: statusInfo.color,
+                            fontSize: 12,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          {statusInfo.label}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
+                        {q.question}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: 8,
+                          fontSize: 13,
+                        }}
+                      >
+                        {["A", "B", "C", "D"].map((letter) => {
+                          const text = q[`option_${letter.toLowerCase()}`];
+                          if (!text) return null;
+
+                          return (
+                            <div
+                              key={letter}
+                              style={{
+                                padding: 8,
+                                borderRadius: 10,
+                                background:
+                                  q.correct_answer === letter
+                                    ? "rgba(34,197,94,0.18)"
+                                    : "rgba(15,23,42,0.85)",
+                                border:
+                                  q.correct_answer === letter
+                                    ? "1px solid rgba(34,197,94,0.55)"
+                                    : "1px solid rgba(255,255,255,0.10)",
+                              }}
+                            >
+                              <b>{letter})</b> {text}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {q.explanation && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 13,
+                            opacity: 0.85,
+                          }}
+                        >
+                          <b>Spiegazione:</b> {q.explanation}
+                        </div>
+                      )}
+
+                      {checks.length > 0 && (
+                        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                          {checks.map((check, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                fontSize: 12,
+                                color:
+                                  check.status === "ok"
+                                    ? "#22c55e"
+                                    : check.status === "warning"
+                                    ? "#facc15"
+                                    : "#ef4444",
+                              }}
+                            >
+                              {check.status === "ok" ? "✅" : check.status === "warning" ? "⚠️" : "❌"}{" "}
+                              {check.type}: {check.message}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        width: 180,
+                        display: "grid",
+                        gap: 8,
+                        justifyItems: "stretch",
+                      }}
+                    >
+                      {q.image_url && (
+                        <img
+                          src={q.image_url}
+                          alt="Preview"
+                          style={{
+                            width: 180,
+                            height: 96,
+                            objectFit: "contain",
+                            background: "rgba(0,0,0,0.35)",
+                            borderRadius: 10,
+                            border: "1px solid rgba(255,255,255,0.14)",
+                          }}
+                        />
+                      )}
+
+                      {youtubeId && (
+                        <img
+                          src={`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`}
+                          alt="YouTube preview"
+                          style={{
+                            width: 180,
+                            height: 96,
+                            objectFit: "cover",
+                            background: "rgba(0,0,0,0.35)",
+                            borderRadius: 10,
+                            border: "1px solid rgba(255,255,255,0.14)",
+                          }}
+                        />
+                      )}
+
+                      {q.audio_url && (
+                        <audio
+                          src={q.audio_url}
+                          controls
+                          style={{ width: 180 }}
+                        />
+                      )}
+
+                      {q.video_url && !q.youtube_url && (
+                        <video
+                          src={q.video_url}
+                          controls
+                          style={{
+                            width: 180,
+                            maxHeight: 110,
+                            borderRadius: 10,
+                            background: "black",
+                          }}
+                        />
+                      )}
+
+                      <button
+                        onClick={() => deleteQuestionFromQuiz(q.id)}
+                        style={{
+                          ...buttonStyle,
+                          margin: 0,
+                          padding: "10px 12px",
+                          background: "#ef4444",
+                          fontSize: 13,
+                        }}
+                      >
+                        🗑️ Elimina domanda
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ===== GRID PRINCIPALE ===== */}
       <div
         style={{
           display: "grid",
@@ -6069,9 +6613,8 @@ if (role === "host") {
           gap: 18,
         }}
       >
-        {/* ===== DOMANDA ===== */}
         <div style={panelStyle}>
-          <h2>🎯 Domanda</h2>
+          <h2>🎯 Domanda corrente</h2>
 
           {!currentQuestion ? (
             <div>Nessuna domanda</div>
@@ -6089,7 +6632,21 @@ if (role === "host") {
                   if (!text) return null;
 
                   return (
-                    <div key={l} style={{ padding: 10, borderRadius: 10, background: "#1e293b" }}>
+                    <div
+                      key={l}
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        background:
+                          currentQuestion.correct_answer === l
+                            ? "rgba(34,197,94,0.20)"
+                            : "#1e293b",
+                        border:
+                          currentQuestion.correct_answer === l
+                            ? "1px solid rgba(34,197,94,0.55)"
+                            : "1px solid rgba(255,255,255,0.10)",
+                      }}
+                    >
                       <b>{l})</b> {text}
                     </div>
                   );
@@ -6099,9 +6656,7 @@ if (role === "host") {
           )}
         </div>
 
-        {/* ===== DESTRA ===== */}
         <div style={{ display: "grid", gap: 18 }}>
-          {/* ===== RISPOSTE ===== */}
           <div style={panelStyle}>
             <h2>📊 Risposte</h2>
 
@@ -6116,24 +6671,30 @@ if (role === "host") {
             })}
           </div>
 
-          {/* ===== CLASSIFICA ===== */}
           <div style={panelStyle}>
             <h2>🏆 Classifica</h2>
 
-            {hostSortedPlayers.map((p, i) => (
-              <div key={p.id}>
-                {i + 1}. {p.name} — {p.score}
-              </div>
-            ))}
+            {hostSortedPlayers.length === 0 ? (
+              <div>Nessun giocatore</div>
+            ) : (
+              hostSortedPlayers.map((p, i) => (
+                <div key={p.id}>
+                  {i + 1}. {p.name} — {p.score}
+                </div>
+              ))
+            )}
           </div>
 
-          {/* ===== EVENTI ===== */}
           <div style={panelStyle}>
             <h2>📡 Eventi</h2>
 
-            {liveEvents.map((e) => (
-              <div key={e.id}>{e.event_text}</div>
-            ))}
+            {liveEvents.length === 0 ? (
+              <div>Nessun evento</div>
+            ) : (
+              liveEvents.map((e) => (
+                <div key={e.id}>{e.event_text}</div>
+              ))
+            )}
           </div>
         </div>
       </div>
