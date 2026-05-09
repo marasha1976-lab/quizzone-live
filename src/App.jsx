@@ -2932,6 +2932,60 @@ useEffect(() => {
 }, [role, stop10RoundId]);
 
 /* =========================
+   7.6C - Aggiorna punti player dopo Stop10
+========================= */
+
+useEffect(() => {
+  if (role !== "player") return;
+  if (!game?.id) return;
+  if (!joinedPlayer?.id) return;
+  if (effectivePhase !== "stop10_results") return;
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const updatedPlayers = await loadPlayersOnly(game.id);
+
+      const updatedMe = updatedPlayers.find(
+        (p) => p.id === joinedPlayer.id
+      );
+
+      if (!cancelled && updatedMe) {
+        setJoinedPlayer(updatedMe);
+      }
+
+      const { data, error } = await supabase
+        .from("stop10_results")
+        .select("*")
+        .eq("game_id", game.id)
+        .eq("player_id", joinedPlayer.id)
+        .eq("round_id", game.stop10_round_id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!cancelled && data) {
+        setStop10PlayerResult(data);
+        setStop10PlayerStopped(true);
+      }
+    } catch (error) {
+      console.error("Errore aggiornamento player Stop10:", error);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  role,
+  game?.id,
+  game?.stop10_round_id,
+  effectivePhase,
+  joinedPlayer?.id,
+]);
+
+/* =========================
    7.7 - Auto clear feedback risposta
 ========================= */
 
