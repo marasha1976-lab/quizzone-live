@@ -6295,6 +6295,9 @@ if (role === "host") {
           <button onClick={revealAnswer} style={buttonStyle}>💡 Risposta</button>
           <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>🏆 Classifica</button>
           <button onClick={startStop10Game} style={buttonStyle}>⏱ Stop10</button>
+<button onClick={finishStop10Game} style={buttonStyle}>
+  🏁 Chiudi Stop10 e assegna punti
+</button>
 
           <button onClick={downloadLeaderboardCsv} style={buttonStyle}>
             ⬇️ Scarica classifica
