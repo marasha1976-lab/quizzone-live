@@ -2385,115 +2385,129 @@ setMediaCheckRunning(false);
     }
   }
 
-  /* =========================
-     6.12 - Minigioco STOP 10: chiusura e punteggi
-  ========================= */
+/* =========================
+   6.12 - Minigioco STOP 10: chiusura e punteggi
+========================= */
 
-  async function finishStop10Game() {
-    if (!game?.id) return;
-    if (!stop10RoundId) {
-      setStatus("Nessuno Stop10 attivo");
+async function finishStop10Game() {
+  if (!game?.id) return;
+
+  const activeStop10RoundId = game?.stop10_round_id || stop10RoundId;
+
+  if (!activeStop10RoundId) {
+    setStatus("Nessuno Stop10 attivo");
+    return;
+  }
+
+  try {
+    const { data: freshGame, error: gameError } = await supabase
+      .from("games")
+      .select("*")
+      .eq("id", game.id)
+      .single();
+
+    if (gameError) throw gameError;
+
+    if (freshGame.phase !== "stop10") {
+      setStatus("Lo Stop10 non è in corso oppure è già stato chiuso");
       return;
     }
 
-    try {
-      const { data: freshGame, error: gameError } = await supabase
-        .from("games")
-        .select("*")
-        .eq("id", game.id)
-        .single();
+    const { data: resultsData, error: resultsError } = await supabase
+      .from("stop10_results")
+      .select("*")
+      .eq("game_id", game.id)
+      .eq("round_id", activeStop10RoundId);
 
-      if (gameError) throw gameError;
+    if (resultsError) throw resultsError;
 
-      if (freshGame.phase !== "stop10") {
-        setStatus("Lo Stop10 non è in corso oppure è già stato chiuso");
-        return;
-      }
+    const validResults = (resultsData || [])
+      .filter((r) => {
+        const stoppedMs = Number(r.stopped_ms || 0);
+        return stoppedMs > 0 && stoppedMs <= 10000;
+      })
+      .sort((a, b) => {
+        const diff = Number(a.diff_ms || 0) - Number(b.diff_ms || 0);
+        if (diff !== 0) return diff;
+        return Number(b.stopped_ms || 0) - Number(a.stopped_ms || 0);
+      });
 
-      const { data: resultsData, error: resultsError } = await supabase
-        .from("stop10_results")
-        .select("*")
-        .eq("game_id", game.id)
-        .eq("round_id", stop10RoundId);
-
-      if (resultsError) throw resultsError;
-
-      const validResults = (resultsData || [])
-        .filter((r) => {
-          const stoppedMs = Number(r.stopped_ms || 0);
-          return stoppedMs > 0 && stoppedMs <= 10000;
-        })
-        .sort((a, b) => {
-          const diff = Number(a.diff_ms || 0) - Number(b.diff_ms || 0);
-          if (diff !== 0) return diff;
-          return Number(b.stopped_ms || 0) - Number(a.stopped_ms || 0);
-        });
-
-      const pointsByPosition = [200, 150, 100, 70, 50];
-
-      for (let index = 0; index < validResults.length; index += 1) {
-        const result = validResults[index];
-        const points = pointsByPosition[index] || 30;
-
-        const { data: player, error: playerError } = await supabase
-          .from("players")
-          .select("id, score")
-          .eq("id", result.player_id)
-          .single();
-
-        if (playerError) throw playerError;
-
-        const newScore = Number(player.score || 0) + points;
-
-        const { error: updatePlayerError } = await supabase
-          .from("players")
-          .update({ score: newScore })
-          .eq("id", result.player_id);
-
-        if (updatePlayerError) throw updatePlayerError;
-
-        const { error: updateResultError } = await supabase
-          .from("stop10_results")
-          .update({ score_awarded: points })
-          .eq("id", result.id);
-
-        if (updateResultError) throw updateResultError;
-      }
-
-      const { data: updatedGame, error: updateGameError } = await supabase
-        .from("games")
-        .update({
-          phase: "stop10_results",
-          time_left: 0,
-          show_leaderboard: false,
-        })
-        .eq("id", game.id)
-        .select()
-        .single();
-
-      if (updateGameError) throw updateGameError;
-
-      await addLiveEvent(
-        game.id,
-        "stop10_results",
-        `🏆 Stop10 concluso! Assegnati punti a ${validResults.length} giocatori`
-      );
-
-      setGame(updatedGame);
-
-      await Promise.all([
-        loadPlayersOnly(game.id),
-        loadStop10ResultsOnly(game.id),
-        loadEventsOnly(game.id),
-      ]);
-
-      setStatus("Stop10 concluso: punti assegnati");
-    } catch (error) {
-      console.error(error);
-      setStatus("Errore chiusura Stop10: " + error.message);
+    if (!validResults.length) {
+      setStatus("Stop10 chiuso: nessun risultato valido");
     }
-  }
 
+    const pointsByPosition = [200, 150, 100, 70, 50];
+
+    for (let index = 0; index < validResults.length; index += 1) {
+      const result = validResults[index];
+      const points = pointsByPosition[index] || 30;
+
+      const { data: player, error: playerError } = await supabase
+        .from("players")
+        .select("id, score")
+        .eq("id", result.player_id)
+        .single();
+
+      if (playerError) throw playerError;
+
+      const newScore = Number(player.score || 0) + points;
+
+      const { error: updatePlayerError } = await supabase
+        .from("players")
+        .update({ score: newScore })
+        .eq("id", result.player_id);
+
+      if (updatePlayerError) throw updatePlayerError;
+
+      const { error: updateResultError } = await supabase
+        .from("stop10_results")
+        .update({ score_awarded: points })
+        .eq("id", result.id);
+
+      if (updateResultError) throw updateResultError;
+
+      if (joinedPlayer?.id === result.player_id) {
+        setJoinedPlayer((prev) => ({
+          ...prev,
+          score: newScore,
+        }));
+      }
+    }
+
+    const { data: updatedGame, error: updateGameError } = await supabase
+      .from("games")
+      .update({
+        phase: "stop10_results",
+        time_left: 0,
+        show_leaderboard: false,
+      })
+      .eq("id", game.id)
+      .select()
+      .single();
+
+    if (updateGameError) throw updateGameError;
+
+    await addLiveEvent(
+      game.id,
+      "stop10_results",
+      `🏆 Stop10 concluso! Assegnati punti a ${validResults.length} giocatori`
+    );
+
+    setGame(updatedGame);
+
+    await Promise.all([
+      loadPlayersOnly(game.id),
+      loadStop10ResultsOnly(game.id),
+      loadEventsOnly(game.id),
+    ]);
+
+    setStatus("Stop10 concluso: punti assegnati");
+  } catch (error) {
+    console.error(error);
+    setStatus("Errore chiusura Stop10: " + error.message);
+  }
+}
+  
   /* =========================
      6.13 - Elimina singola domanda e riordina
   ========================= */
