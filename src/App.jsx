@@ -28,8 +28,12 @@ const supabase = createClient(
 
 const GAME_CODE = "PUB2026";
 const COUNTDOWN_DURATION = 10;
-const QUESTION_START_DELAY_MS = 3000;
+
+// TEMPO TECNICO PER FAR ARRIVARE REALTIME A TV/PLAYER
 const SYNC_START_GRACE_MS = 1200;
+
+// COUNTDOWN PRE-DOMANDA HOST -> QUESTION
+const QUESTION_START_DELAY_MS = 3000;
 const COUNTDOWN_AUDIO_SRC = "/media/countdown10.m4a";
 const REVEAL_AUDIO_SRC = "";
 const HOST_PASSWORD = "Cromos6339";
@@ -631,9 +635,8 @@ const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
     if (roleFromUrl === "tv") setRole("tv");
     if (roleFromUrl === "host") setRole("host");
   }, []);
-/* =====================================================
-   PARTE 4C - MEMO QUIZ, STOP10, STATISTICHE, JOLLY E TV
-===================================================== */
+
+/* ===== FASE, TIMER DOMANDA E COUNTDOWN ===== */
 
 const effectivePhase = useMemo(() => {
   return getEffectivePhase(game, syncedNowMs);
@@ -667,21 +670,29 @@ const stop10ElapsedSeconds = useMemo(() => {
   return stop10ElapsedMs / 1000;
 }, [stop10ElapsedMs]);
 
-const stop10HideTimer = stop10ElapsedMs >= 5000;
+const stop10WaitingToStart =
+  effectivePhase === "stop10" &&
+  Number.isFinite(stop10StartedAtMs) &&
+  syncedNowMs < stop10StartedAtMs;
+
+const stop10HideTimer = !stop10WaitingToStart && stop10ElapsedMs >= 5000;
 
 const stop10DisplayTime = useMemo(() => {
-  if (!Number.isFinite(stop10ElapsedMs)) return "0.0";
+  if (stop10WaitingToStart) return "10.0";
   if (stop10ElapsedMs >= 5000) return "???";
 
   const remaining = Math.max(0, 10 - stop10ElapsedMs / 1000);
   return remaining.toFixed(1);
-}, [stop10ElapsedMs]);
+}, [stop10ElapsedMs, stop10WaitingToStart]);
 
 const stop10IsRunning =
-  effectivePhase === "stop10" && stop10ElapsedMs < 10000;
+  effectivePhase === "stop10" &&
+  !stop10WaitingToStart &&
+  stop10ElapsedMs < 10000;
 
 const stop10IsFinished =
-  effectivePhase === "stop10_results" || stop10ElapsedMs >= 10000;
+  effectivePhase === "stop10_results" ||
+  (!stop10WaitingToStart && stop10ElapsedMs >= 10000);
 
 const currentStop10Results = useMemo(() => {
   if (!stop10RoundId) return [];
@@ -702,6 +713,7 @@ const myStop10Result = useMemo(() => {
     ) || null
   );
 }, [stop10Results, stop10RoundId, joinedPlayer?.id]);
+
 
 /* ===== HOST TIMER ===== */
 
@@ -2283,7 +2295,7 @@ setMediaCheckRunning(false);
     }
   }
 
-    /* =========================
+  /* =========================
      6.10 - Minigioco STOP 10: avvio host
   ========================= */
 
@@ -2291,7 +2303,7 @@ setMediaCheckRunning(false);
     if (!game?.id) return;
 
     const roundId = Date.now();
-    const startedAtMs = Math.round(syncedNowRef.current);
+    const startedAtMs = Math.round(syncedNowRef.current + SYNC_START_GRACE_MS);
 
     try {
       await supabase.from("stop10_results").delete().eq("game_id", game.id);
@@ -2329,7 +2341,7 @@ setMediaCheckRunning(false);
       setStatus("Errore avvio Stop10: " + error.message);
     }
   }
-
+    
   /* =========================
      6.11 - Minigioco STOP 10: stop player
   ========================= */
@@ -4256,7 +4268,8 @@ if (role === "player") {
           )}
         </div>
 
-                {/* =========================
+
+        {/* =========================
            9.5B - Minigioco STOP 10 PLAYER
         ========================= */}
 
@@ -4269,10 +4282,21 @@ if (role === "player") {
             <p style={{ fontSize: 18, opacity: 0.9, marginBottom: 18 }}>
               Premi STOP il più vicino possibile allo zero.
               <br />
-              A 3 secondi il timer sparisce.
+              A 5 secondi il timer sparisce.
             </p>
 
-            {!stop10HideTimer ? (
+            {stop10WaitingToStart ? (
+              <div
+                style={{
+                  fontSize: 42,
+                  fontWeight: "bold",
+                  color: GOLD,
+                  marginBottom: 22,
+                }}
+              >
+                Preparati...
+              </div>
+            ) : !stop10HideTimer ? (
               <div
                 style={{
                   fontSize: 76,
@@ -4282,7 +4306,7 @@ if (role === "player") {
                   animation: "pulseTime 1s infinite",
                 }}
               >
-                {Math.max(0, (10 - stop10ElapsedSeconds)).toFixed(1)}
+                {stop10DisplayTime}
               </div>
             ) : (
               <div
@@ -4318,7 +4342,7 @@ if (role === "player") {
                   s
                 </div>
               </div>
-            ) : stop10ElapsedMs >= 10000 ? (
+            ) : stop10IsFinished ? (
               <div
                 style={{
                   padding: 18,
@@ -4334,22 +4358,27 @@ if (role === "player") {
             ) : (
               <button
                 onClick={stop10SubmitStop}
-                disabled={stop10PlayerStopped || stop10LockRef.current}
+                disabled={
+                  stop10WaitingToStart ||
+                  stop10PlayerStopped ||
+                  stop10LockRef.current
+                }
                 style={{
                   ...buttonStyle,
                   width: "100%",
                   maxWidth: 360,
                   fontSize: 30,
                   padding: "22px 26px",
+                  opacity: stop10WaitingToStart ? 0.45 : 1,
                   background: "linear-gradient(135deg, #ef4444 0%, #991b1b 100%)",
                 }}
               >
-                STOP
+                {stop10WaitingToStart ? "ASPETTA..." : "STOP"}
               </button>
             )}
           </div>
         )}
-
+                
         {/* =========================
            9.6 - Lobby PLAYER
         ========================= */}
@@ -5327,7 +5356,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       zIndex: 9995,
     }}
   >
-    {/* PARTICELLE SFONDO */}
     <div
       className="float-particles"
       style={{
@@ -5344,7 +5372,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       }}
     />
 
-    {/* CONTENUTO */}
     <div
       style={{
         position: "relative",
@@ -5357,7 +5384,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         alignItems: "center",
       }}
     >
-      {/* TITOLO */}
       <div
         className="glow-text"
         style={{
@@ -5379,10 +5405,11 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           textAlign: "center",
         }}
       >
-        Fermati il più vicino possibile a 10.00
+        {stop10WaitingToStart
+          ? "Prepararsi... il tempo parte tra un istante"
+          : "Fermati il più vicino possibile a 10.00"}
       </div>
 
-      {/* TIMER GRANDE */}
       <div
         className="countdown-effect"
         style={{
@@ -5396,10 +5423,9 @@ const renderTvQuestionMedia = (question, variant = "question") => {
             : "0 0 45px rgba(250,204,21,0.75)",
         }}
       >
-        {stop10DisplayTime}
+        {stop10WaitingToStart ? "10.0" : stop10DisplayTime}
       </div>
 
-      {/* LISTA GIOCATORI CHE HANNO STOPPATO */}
       <div
         style={{
           width: "100%",
@@ -5423,7 +5449,9 @@ const renderTvQuestionMedia = (question, variant = "question") => {
               opacity: 0.9,
             }}
           >
-            Nessuno ha ancora premuto STOP
+            {stop10WaitingToStart
+              ? "Giocatori pronti..."
+              : "Nessuno ha ancora premuto STOP"}
           </div>
         ) : (
           currentStop10Results.slice(0, 8).map((p, i) => {
