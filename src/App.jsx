@@ -890,13 +890,11 @@ const tvLobbyPlayerPadding = useMemo(() => {
 ===================================================== */
 
 function normalizeQuestionTime(question) {
-  const rawTime = Number(question?.time_limit);
+  const type = String(question?.type || "multiple").trim().toLowerCase();
 
-  if (Number.isFinite(rawTime) && rawTime > 0) {
-    return rawTime;
-  }
+  if (type === "audio" || type === "video") return 20;
 
-  return COUNTDOWN_DURATION;
+  return 10;
 }
 
 async function getOrCreateGame() {
@@ -1422,15 +1420,11 @@ function normalizeCsvRows(rows) {
           row.explanation || ""
         ).trim(),
 
-        time_limit:
-          cleanedType === "audio" || cleanedType === "video"
-            ? 20
-            : cleanedType === "image"
-            ? 15
-            : Number(row.time_limit) > 0
-            ? Number(row.time_limit)
-            : 10,
-                
+time_limit:
+  cleanedType === "audio" || cleanedType === "video"
+    ? 20
+    : 10,
+                        
         points: Number(row.points || 100),
 
         image_url: String(
