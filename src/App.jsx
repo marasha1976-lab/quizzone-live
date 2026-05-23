@@ -1,5 +1,5 @@
 /* =====================================================
-   PARTE 1 - IMPORT, CONFIGURAZIONE, COSTANTI E DATI DEMO
+    1 - IMPORT, CONFIPARTEGURAZIONE, COSTANTI E DATI DEMO
 ===================================================== */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -383,25 +383,45 @@ function useCountdownAudio(nowProvider) {
       if (!startedAtMsValue || !durationSeconds) return;
 
       const audio = ensureAudio();
-      const startedAtMs = toMs(startedAtMsValue);
-      if (Number.isNaN(startedAtMs)) return;
+      const questionStartedAtMs = toMs(startedAtMsValue);
+      if (Number.isNaN(questionStartedAtMs)) return;
 
       activeRef.current = true;
+
+      const QUESTION_AUDIO_SECONDS = COUNTDOWN_DURATION;
       const GONG_TAIL_SECONDS = 5;
+
+      const duration = Number(durationSeconds || COUNTDOWN_DURATION);
+
+      // FIX:
+      // l'audio countdown deve partire solo negli ultimi 10 secondi della domanda.
+      // Se la domanda dura 10 sec parte subito.
+      // Se dura 15 sec parte dopo 5 sec.
+      // Se dura 20 sec parte dopo 10 sec.
+      // Se dura 25 sec parte dopo 15 sec.
+      const audioStartDelaySeconds = Math.max(0, duration - QUESTION_AUDIO_SECONDS);
+      const audioStartAtMs = questionStartedAtMs + audioStartDelaySeconds * 1000;
 
       const syncPlayback = () => {
         if (!activeRef.current) return;
 
         const nowMs = typeof nowProvider === "function" ? nowProvider() : Date.now();
-        const elapsed = Math.max(0, (nowMs - startedAtMs) / 1000);
-        const duration = Number(durationSeconds || COUNTDOWN_DURATION);
+
+        if (nowMs < audioStartAtMs) {
+          return;
+        }
+
+        const elapsed = Math.max(0, (nowMs - audioStartAtMs) / 1000);
 
         const audioDuration =
           Number.isFinite(audio.duration) && audio.duration > 0
             ? audio.duration
-            : duration + GONG_TAIL_SECONDS;
+            : QUESTION_AUDIO_SECONDS + GONG_TAIL_SECONDS;
 
-        const maxPlayableTime = Math.min(audioDuration, duration + GONG_TAIL_SECONDS);
+        const maxPlayableTime = Math.min(
+          audioDuration,
+          QUESTION_AUDIO_SECONDS + GONG_TAIL_SECONDS
+        );
 
         if (elapsed >= maxPlayableTime) {
           stopCountdownAudio();
@@ -465,7 +485,7 @@ function useRevealAudio() {
 }
 
 /* =====================================================
-   PARTE 4A - COMPONENTE APP: STATE E REF
+    4A - COPARTEMPONENTE APP: STATE E REF
 ===================================================== */
 
 export default function App() {
@@ -866,10 +886,16 @@ const tvLobbyPlayerPadding = useMemo(() => {
 }, [players.length]);
 
 /* =====================================================
-   PARTE 5A - CARICAMENTO DATI BASE
+    5PARTEA - CARICAMENTO DATI BASE
 ===================================================== */
 
-function normalizeQuestionTime() {
+function normalizeQuestionTime(question) {
+  const rawTime = Number(question?.time_limit);
+
+  if (Number.isFinite(rawTime) && rawTime > 0) {
+    return rawTime;
+  }
+
   return COUNTDOWN_DURATION;
 }
 
@@ -921,7 +947,7 @@ async function ensureQuestions(gameId) {
   const rows = DEMO_QUESTIONS.map((q) => ({
     game_id: gameId,
     ...q,
-    time_limit: COUNTDOWN_DURATION,
+    time_limit: normalizeQuestionTime(q),
   }));
 
   const { data: inserted, error: insertError } = await supabase
@@ -930,26 +956,45 @@ async function ensureQuestions(gameId) {
     .select();
 
   if (insertError) throw insertError;
+
   return (inserted || []).sort((a, b) => a.position - b.position);
 }
 
-async function addLiveEvent(gameId, eventType, eventText, playerNameValue = null) {
-  const { error } = await supabase.from("live_events").insert([
-    {
-      game_id: gameId,
-      event_type: eventType,
-      player_name: playerNameValue,
-      event_text: eventText,
-    },
-  ]);
+async function addLiveEvent(
+  gameId,
+  eventType,
+  eventText,
+  extraData = {}
+) {
+  if (!gameId) return;
 
-  if (error) throw error;
+  const payload = {
+    game_id: gameId,
+    event_type: eventType,
+    event_text: eventText,
+    ...extraData,
+  };
+
+  const { error } = await supabase
+    .from("live_events")
+    .insert([payload]);
+
+  if (error) {
+    console.error("Errore live event:", error);
+  }
 }
 
 async function loadGameOnly() {
-  const g = await getOrCreateGame();
-  setGame(g);
-  return g;
+  const { data, error } = await supabase
+    .from("games")
+    .select("*")
+    .eq("code", GAME_CODE)
+    .single();
+
+  if (error) throw error;
+
+  setGame(data);
+  return data;
 }
 
 async function loadQuestionsOnly(gameId) {
@@ -963,8 +1008,14 @@ async function loadQuestionsOnly(gameId) {
 
   if (error) throw error;
 
-  setQuestions(data || []);
-  return data || [];
+  const normalized = (data || []).map((q) => ({
+    ...q,
+    time_limit: normalizeQuestionTime(q),
+  }));
+
+  setQuestions(normalized);
+
+  return normalized;
 }
 
 async function loadPlayersOnly(gameId) {
@@ -973,21 +1024,16 @@ async function loadPlayersOnly(gameId) {
   const { data, error } = await supabase
     .from("players")
     .select("*")
-    .eq("game_id", gameId)
-    .order("score", { ascending: false });
+    .eq("game_id", gameId);
 
   if (error) throw error;
 
-  const sortedPlayers = [...(data || [])].sort((a, b) => {
-    const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
-    if (scoreDiff !== 0) return scoreDiff;
-    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-  });
+  const sortedPlayers = sortPlayers(data || []);
 
   setPlayers(sortedPlayers);
 
-  if (joinedPlayer?.id) {
-    const updatedJoined = sortedPlayers.find((p) => p.id === joinedPlayer.id) || null;
+  if (role === "player" && playerId) {
+    const updatedJoined = sortedPlayers.find((p) => p.id === playerId);
 
     if (updatedJoined) {
       setJoinedPlayer(updatedJoined);
@@ -1039,10 +1085,13 @@ async function loadEventsOnly(gameId) {
   if (error) throw error;
 
   const sortedEvents = [...(data || [])].sort(
-    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    (a, b) =>
+      new Date(b.created_at || 0).getTime() -
+      new Date(a.created_at || 0).getTime()
   );
 
   setLiveEvents(sortedEvents);
+
   return sortedEvents;
 }
 
@@ -1373,8 +1422,15 @@ function normalizeCsvRows(rows) {
           row.explanation || ""
         ).trim(),
 
-        time_limit: COUNTDOWN_DURATION,
-
+        time_limit:
+          cleanedType === "audio" || cleanedType === "video"
+            ? 20
+            : cleanedType === "image"
+            ? 15
+            : Number(row.time_limit) > 0
+            ? Number(row.time_limit)
+            : 10,
+                
         points: Number(row.points || 100),
 
         image_url: String(
@@ -3603,16 +3659,25 @@ const renderQuestionMedia = (question, mode = "player") => {
         if (parsed.pathname.startsWith("/watch")) {
           videoId = parsed.searchParams.get("v") || "";
         } else if (parsed.pathname.startsWith("/shorts/")) {
-          videoId = parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+          videoId =
+            parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
         } else if (parsed.pathname.startsWith("/embed/")) {
-          videoId = parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+          videoId =
+            parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
         }
       }
 
       if (!videoId) return "";
 
-      const startRaw = parsed.searchParams.get("start") || parsed.searchParams.get("t") || "";
+      const startRaw =
+        parsed.searchParams.get("start") ||
+        parsed.searchParams.get("t") ||
+        "";
+
       const start = String(startRaw).replace("s", "").trim();
+
+      // DEFAULT: tutti i media YouTube partono da 4 secondi
+      const effectiveStart = /^\d+$/.test(start) ? start : "4";
 
       const params = new URLSearchParams({
         controls: "1",
@@ -3625,9 +3690,7 @@ const renderQuestionMedia = (question, mode = "player") => {
         params.set("autoplay", "1");
       }
 
-      if (/^\d+$/.test(start)) {
-        params.set("start", start);
-      }
+      params.set("start", effectiveStart);
 
       return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
     } catch {
@@ -4727,6 +4790,9 @@ const getTvYouTubeEmbedUrl = (url) => {
 
     const start = String(startRaw).replace("s", "").trim();
 
+    // DEFAULT: tutti i media YouTube partono da 4 secondi
+    const effectiveStart = /^\d+$/.test(start) ? start : "4";
+
     const params = new URLSearchParams({
       autoplay: "1",
       controls: "0",
@@ -4738,9 +4804,7 @@ const getTvYouTubeEmbedUrl = (url) => {
       iv_load_policy: "3",
     });
 
-    if (/^\d+$/.test(start)) {
-      params.set("start", start);
-    }
+    params.set("start", effectiveStart);
 
     return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
   } catch {
@@ -5394,7 +5458,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           lineHeight: 1,
         }}
       >
-        ⏱ STOP A 10 SECONDI
+        ⏱ STOP TIMER A ZERO!
       </div>
 
       <div
@@ -5407,7 +5471,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       >
         {stop10WaitingToStart
           ? "Prepararsi... il tempo parte tra un istante"
-          : "Fermati il più vicino possibile a 10.00"}
+          : "Fermati il più vicino possibile a ZERO 0.00"}
       </div>
 
       <div
