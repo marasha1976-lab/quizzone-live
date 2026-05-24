@@ -106,6 +106,9 @@ const ANSWER_C = "#f59e0b";
 const ANSWER_D = "#22c55e";
 
 const LOGO_BG = "/images/logo.png";
+const STOPZERO_BG = "/images/stopzero.png";
+const STOPZERO_AUDIO = "/media/stop10_intro.mp3";
+const STOPZERO_PLAYER_BG = "/images/stopzeroplayer.png";
 
 const PLAYER_JOIN_URL = "https://quizzone-live-three.vercel.app/?role=player";
 const tvLogoStyle = {
@@ -702,7 +705,7 @@ const stop10DisplayTime = useMemo(() => {
   if (stop10ElapsedMs >= 5000) return "???";
 
   const remaining = Math.max(0, 10 - stop10ElapsedMs / 1000);
-  return remaining.toFixed(1);
+  return remaining.toFixed(2);
 }, [stop10ElapsedMs, stop10WaitingToStart]);
 
 const stop10IsRunning =
@@ -2344,54 +2347,97 @@ setMediaCheckRunning(false);
       submitLockRef.current = false;
     }
   }
+/* =========================
+   6.10 - Minigioco STOP 10: avvio host
+========================= */
 
-  /* =========================
-     6.10 - Minigioco STOP 10: avvio host
-  ========================= */
+async function startStop10Game() {
+  if (!game?.id) return;
 
-  async function startStop10Game() {
-    if (!game?.id) return;
+  const INTRO_DURATION_MS = 32000; // durata audio intro circa 32 secondi
 
-    const roundId = Date.now();
-    const startedAtMs = Math.round(syncedNowRef.current + SYNC_START_GRACE_MS);
+  try {
+    setStatus("Intro Stop Zero avviata");
 
-    try {
-      await supabase.from("stop10_results").delete().eq("game_id", game.id);
+    await supabase.from("stop10_results").delete().eq("game_id", game.id);
 
-      const { data, error } = await supabase
-        .from("games")
-        .update({
-          phase: "stop10",
-          stop10_round_id: roundId,
-          stop10_started_at_ms: startedAtMs,
-          countdown_started_at_ms: null,
-          question_started_at_ms: null,
-          question_started_at: null,
-          question_duration: null,
-          time_left: 0,
-          show_leaderboard: false,
-        })
-        .eq("id", game.id)
-        .select()
-        .single();
+    const { data, error } = await supabase
+      .from("games")
+      .update({
+        phase: "stop10_intro",
+        stop10_round_id: null,
+        stop10_started_at_ms: null,
+        countdown_started_at_ms: null,
+        question_started_at_ms: null,
+        question_started_at: null,
+        question_duration: null,
+        time_left: 0,
+        show_leaderboard: false,
+      })
+      .eq("id", game.id)
+      .select()
+      .single();
 
-      if (error) throw error;
+    if (error) throw error;
 
-      await addLiveEvent(game.id, "stop10_start", "⏱️ PARTITO IL MINIGIOCO STOP 10!");
+    await addLiveEvent(
+      game.id,
+      "stop10_intro",
+      "🎙️ INTRO MINIGIOCO STOP ZERO!"
+    );
 
-      setGame(data);
-      setStop10Results([]);
-      setStop10PlayerStopped(false);
-      setStop10PlayerResult(null);
-      stop10LockRef.current = false;
+    setGame(data);
+    setStop10Results([]);
+    setStop10PlayerStopped(false);
+    setStop10PlayerResult(null);
+    stop10LockRef.current = false;
 
-      setStatus("Stop10 avviato");
-    } catch (error) {
-      console.error(error);
-      setStatus("Errore avvio Stop10: " + error.message);
-    }
+    window.setTimeout(async () => {
+      const roundId = Date.now();
+      const startedAtMs = Math.round(
+        syncedNowRef.current + SYNC_START_GRACE_MS
+      );
+
+      try {
+        const { data: startedGame, error: startError } = await supabase
+          .from("games")
+          .update({
+            phase: "stop10",
+            stop10_round_id: roundId,
+            stop10_started_at_ms: startedAtMs,
+            countdown_started_at_ms: null,
+            question_started_at_ms: null,
+            question_started_at: null,
+            question_duration: null,
+            time_left: 0,
+            show_leaderboard: false,
+          })
+          .eq("id", game.id)
+          .select()
+          .single();
+
+        if (startError) throw startError;
+
+        await addLiveEvent(
+          game.id,
+          "stop10_start",
+          "⏱️ PARTITO IL MINIGIOCO STOP ZERO!"
+        );
+
+        setGame(startedGame);
+        setStatus("Stop Zero avviato");
+      } catch (startError) {
+        console.error(startError);
+        setStatus("Errore avvio Stop Zero: " + startError.message);
+      }
+    }, INTRO_DURATION_MS);
+  } catch (error) {
+    console.error(error);
+    setStatus("Errore intro Stop Zero: " + error.message);
   }
-    
+}
+
+      
   /* =========================
      6.11 - Minigioco STOP 10: stop player
   ========================= */
@@ -3407,7 +3453,6 @@ useEffect(() => {
   };
 }, [stopCountdownAudio]);
 
-
 /* =========================
    7.17 - Animazione podio finale
 ========================= */
@@ -3420,14 +3465,18 @@ useEffect(() => {
 
   setFinalRevealIndex(-1);
 
-  const t1 = setTimeout(() => setFinalRevealIndex(2), 800);
-  const t2 = setTimeout(() => setFinalRevealIndex(1), 2200);
-  const t3 = setTimeout(() => setFinalRevealIndex(0), 3800);
+  const t1 = setTimeout(() => setFinalRevealIndex(5), 1000);
+  const t2 = setTimeout(() => setFinalRevealIndex(4), 2800);
+  const t3 = setTimeout(() => setFinalRevealIndex(3), 4600);
+  const t4 = setTimeout(() => setFinalRevealIndex(2), 7600);
+  const t5 = setTimeout(() => setFinalRevealIndex(1), 10500);
 
   return () => {
     clearTimeout(t1);
     clearTimeout(t2);
     clearTimeout(t3);
+    clearTimeout(t4);
+    clearTimeout(t5);
   };
 }, [game?.phase]);
 
@@ -4325,117 +4374,119 @@ if (role === "player") {
           )}
         </div>
 
+{/* =========================
+   9.5B - Minigioco STOP 10 PLAYER
+========================= */}
 
-        {/* =========================
-           9.5B - Minigioco STOP 10 PLAYER
-        ========================= */}
+{effectivePhase === "stop10" && (
+  <div
+    style={{
+      ...panelStyle,
+      minHeight: "72vh",
+      textAlign: "center",
+      backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.72)), url(${STOPZERO_PLAYER_BG})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      border: "1px solid rgba(255,255,255,0.22)",
+      boxShadow: "0 0 30px rgba(239,68,68,0.35)",
+    }}
+  >
+    <h2 style={{ fontSize: 34, marginBottom: 10 }}>
+      ⏱️ STOP ZERO
+    </h2>
 
-        {effectivePhase === "stop10" && (
-          <div style={{ ...panelStyle, textAlign: "center" }}>
-            <h2 style={{ fontSize: 34, marginBottom: 12 }}>
-              ⏱️ STOP ALLO ZERO
-            </h2>
+    <p style={{ fontSize: 17, opacity: 0.95, marginBottom: 18 }}>
+      Premi STOP il più vicino possibile allo zero.
+      <br />
+      A 5 secondi il timer sparisce.
+    </p>
 
-            <p style={{ fontSize: 18, opacity: 0.9, marginBottom: 18 }}>
-              Premi STOP il più vicino possibile allo zero.
-              <br />
-              A 5 secondi il timer sparisce.
-            </p>
+    {stop10WaitingToStart ? (
+      <div style={{ fontSize: 38, fontWeight: "bold", color: GOLD, marginBottom: 22 }}>
+        Preparati...
+      </div>
+    ) : !stop10HideTimer ? (
+      <div
+        style={{
+          fontSize: 74,
+          fontWeight: 900,
+          fontFamily: "'Orbitron', monospace",
+          color: "#dbeafe",
+          marginBottom: 22,
+          textShadow: "0 0 15px #fff, 0 0 35px #60a5fa",
+        }}
+      >
+        {stop10DisplayTime}
+      </div>
+    ) : (
+      <div style={{ fontSize: 34, fontWeight: "bold", color: GOLD, marginBottom: 22 }}>
+        TIMER NASCOSTO
+      </div>
+    )}
 
-            {stop10WaitingToStart ? (
-              <div
-                style={{
-                  fontSize: 42,
-                  fontWeight: "bold",
-                  color: GOLD,
-                  marginBottom: 22,
-                }}
-              >
-                Preparati...
-              </div>
-            ) : !stop10HideTimer ? (
-              <div
-                style={{
-                  fontSize: 76,
-                  fontWeight: "bold",
-                  color: GOLD,
-                  marginBottom: 22,
-                  animation: "pulseTime 1s infinite",
-                }}
-              >
-                {stop10DisplayTime}
-              </div>
-            ) : (
-              <div
-                style={{
-                  fontSize: 38,
-                  fontWeight: "bold",
-                  color: GOLD,
-                  marginBottom: 22,
-                }}
-              >
-                TIMER NASCOSTO
-              </div>
-            )}
+    {myStop10Result || stop10PlayerResult ? (
+      <div
+        style={{
+          padding: 18,
+          borderRadius: 18,
+          background: "rgba(34,197,94,0.20)",
+          border: "1px solid rgba(34,197,94,0.55)",
+          fontWeight: "bold",
+          fontSize: 22,
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        ✅ STOP registrato
+        <div style={{ marginTop: 10, color: GOLD }}>
+          Mancavano{" "}
+          {Math.max(
+            0,
+            (10000 - Number((myStop10Result || stop10PlayerResult).stopped_ms || 0)) / 1000
+          ).toFixed(2)}
+          s
+        </div>
+      </div>
+    ) : stop10IsFinished ? (
+      <div
+        style={{
+          padding: 18,
+          borderRadius: 18,
+          background: "rgba(239,68,68,0.20)",
+          border: "1px solid rgba(239,68,68,0.55)",
+          fontWeight: "bold",
+          fontSize: 22,
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        ⛔ Tempo scaduto
+      </div>
+    ) : (
+      <button
+        onClick={stop10SubmitStop}
+        disabled={
+          stop10WaitingToStart ||
+          stop10PlayerStopped ||
+          stop10LockRef.current
+        }
+        style={{
+          ...buttonStyle,
+          width: "100%",
+          maxWidth: 360,
+          fontSize: 34,
+          padding: "24px 28px",
+          opacity: stop10WaitingToStart ? 0.45 : 1,
+          background: "linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%)",
+          border: "2px solid rgba(255,255,255,0.35)",
+          boxShadow: "0 0 30px rgba(239,68,68,0.75)",
+        }}
+      >
+        {stop10WaitingToStart ? "ASPETTA..." : "STOP"}
+      </button>
+    )}
+  </div>
+)}
 
-            {myStop10Result || stop10PlayerResult ? (
-              <div
-                style={{
-                  padding: 18,
-                  borderRadius: 18,
-                  background: "rgba(34,197,94,0.16)",
-                  border: "1px solid rgba(34,197,94,0.45)",
-                  fontWeight: "bold",
-                  fontSize: 22,
-                }}
-              >
-                ✅ STOP registrato
-                <div style={{ marginTop: 10, color: GOLD }}>
-                  Mancavano{" "}
-                  {Math.max(
-                    0,
-                    (10000 - Number((myStop10Result || stop10PlayerResult).stopped_ms || 0)) / 1000
-                  ).toFixed(2)}
-                  s
-                </div>
-              </div>
-            ) : stop10IsFinished ? (
-              <div
-                style={{
-                  padding: 18,
-                  borderRadius: 18,
-                  background: "rgba(239,68,68,0.16)",
-                  border: "1px solid rgba(239,68,68,0.45)",
-                  fontWeight: "bold",
-                  fontSize: 22,
-                }}
-              >
-                ⛔ Tempo scaduto
-              </div>
-            ) : (
-              <button
-                onClick={stop10SubmitStop}
-                disabled={
-                  stop10WaitingToStart ||
-                  stop10PlayerStopped ||
-                  stop10LockRef.current
-                }
-                style={{
-                  ...buttonStyle,
-                  width: "100%",
-                  maxWidth: 360,
-                  fontSize: 30,
-                  padding: "22px 26px",
-                  opacity: stop10WaitingToStart ? 0.45 : 1,
-                  background: "linear-gradient(135deg, #ef4444 0%, #991b1b 100%)",
-                }}
-              >
-                {stop10WaitingToStart ? "ASPETTA..." : "STOP"}
-              </button>
-            )}
-          </div>
-        )}
-                
+                        
         {/* =========================
            9.6 - Lobby PLAYER
         ========================= */}
@@ -5398,35 +5449,90 @@ const renderTvQuestionMedia = (question, variant = "question") => {
    10.10B - Minigioco STOP 10 TV
 ========================= */}
 
-{effectivePhase === "stop10" && (
+{effectivePhase === "stop10_intro" && (
   <div
-    className="stop-bg tv-anim-fade"
+    className="tv-anim-fade"
     style={{
       position: "fixed",
       inset: 0,
+      backgroundImage: `url(${STOPZERO_BG})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      backgroundRepeat: "no-repeat",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      zIndex: 9998,
+    }}
+  >
+    <audio autoPlay src={STOPZERO_AUDIO} />
+
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "radial-gradient(circle at center, rgba(0,0,0,0.05), rgba(0,0,0,0.65))",
+      }}
+    />
+
+    <div
+      style={{
+        position: "relative",
+        zIndex: 3,
+        textAlign: "center",
+        color: "white",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "clamp(90px, 10vw, 170px)",
+          fontWeight: 900,
+          letterSpacing: 8,
+          textTransform: "uppercase",
+          textShadow:
+            "0 0 20px rgba(255,0,0,0.9), 0 0 60px rgba(255,0,0,0.7)",
+        }}
+      >
+        STOP ZERO
+      </div>
+
+      <div
+        style={{
+          marginTop: 30,
+          fontSize: "clamp(28px, 3vw, 46px)",
+          fontWeight: 800,
+          color: "#facc15",
+          textShadow: "0 0 20px rgba(250,204,21,0.8)",
+        }}
+      >
+        Preparati...
+      </div>
+    </div>
+  </div>
+)}
+
+{effectivePhase === "stop10" && (
+  <div
+    style={{
+      minHeight: "100vh",
+      backgroundImage: `url(${STOPZERO_BG})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      justifyContent: "flex-start",
-      padding: "40px 20px",
+      justifyContent: "center",
       color: "white",
-      overflow: "hidden",
-      zIndex: 9995,
+      position: "relative",
     }}
   >
     <div
-      className="float-particles"
       style={{
         position: "absolute",
-        width: "200%",
-        height: "200%",
-        top: "-50%",
-        left: "-50%",
-        background:
-          "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)",
-        backgroundSize: "40px 40px",
-        pointerEvents: "none",
-        zIndex: 0,
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
       }}
     />
 
@@ -5434,138 +5540,58 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       style={{
         position: "relative",
         zIndex: 2,
-        width: "100%",
-        maxWidth: 1100,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
+        textAlign: "center",
       }}
     >
       <div
-        className="glow-text"
         style={{
-          fontSize: "clamp(40px, 6vw, 80px)",
-          fontWeight: "900",
-          marginBottom: 10,
-          textAlign: "center",
-          lineHeight: 1,
+          fontSize: "clamp(80px, 8vw, 150px)",
+          fontWeight: 900,
+          marginBottom: 40,
+          letterSpacing: 6,
+          textShadow:
+            "0 0 20px rgba(255,0,0,0.9), 0 0 60px rgba(255,0,0,0.7)",
         }}
       >
-        ⏱ STOP TIMER A ZERO!
+        STOP ZERO
       </div>
 
       <div
         style={{
-          fontSize: "clamp(18px, 2vw, 28px)",
-          opacity: 0.85,
-          marginBottom: 28,
-          textAlign: "center",
+          fontSize: "clamp(140px, 18vw, 300px)",
+          fontWeight: 900,
+          fontFamily: "'Orbitron', monospace",
+          letterSpacing: 12,
+          lineHeight: 0.9,
+          color: stop10DisplayTime === "???" ? "#60a5fa" : "#dbeafe",
+          textShadow:
+            stop10DisplayTime === "???"
+              ? "0 0 20px #3b82f6, 0 0 70px #2563eb"
+              : "0 0 15px #fff, 0 0 40px #60a5fa, 0 0 100px #2563eb",
+          padding: "25px 55px",
+          borderRadius: 28,
+          background:
+            "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(0,0,0,0.78))",
+          border: "2px solid rgba(96,165,250,0.75)",
+          boxShadow:
+            "0 0 35px rgba(37,99,235,0.6), inset 0 0 30px rgba(96,165,250,0.22)",
+          minWidth: 600,
+          display: "inline-block",
         }}
       >
-        {stop10WaitingToStart
-          ? "Prepararsi... il tempo parte tra un istante"
-          : "Fermati il più vicino possibile a ZERO 0.00"}
-      </div>
-
-      <div
-        className="countdown-effect"
-        style={{
-          fontSize: "clamp(86px, 13vw, 170px)",
-          fontWeight: "900",
-          marginBottom: 34,
-          lineHeight: 1,
-          color: stop10HideTimer ? "white" : GOLD,
-          textShadow: stop10HideTimer
-            ? "0 0 40px rgba(255,255,255,0.65)"
-            : "0 0 45px rgba(250,204,21,0.75)",
-        }}
-      >
-        {stop10WaitingToStart ? "10.0" : stop10DisplayTime}
+        {stop10DisplayTime}
       </div>
 
       <div
         style={{
-          width: "100%",
-          maxWidth: 920,
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-          overflow: "hidden",
+          marginTop: 35,
+          fontSize: "clamp(26px, 2.8vw, 42px)",
+          fontWeight: 700,
+          color: "#facc15",
+          textShadow: "0 0 18px rgba(250,204,21,0.7)",
         }}
       >
-        {currentStop10Results.length === 0 ? (
-          <div
-            style={{
-              padding: "18px 24px",
-              borderRadius: 18,
-              background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.15)",
-              textAlign: "center",
-              fontSize: "clamp(22px, 2.4vw, 34px)",
-              fontWeight: "bold",
-              opacity: 0.9,
-            }}
-          >
-            {stop10WaitingToStart
-              ? "Giocatori pronti..."
-              : "Nessuno ha ancora premuto STOP"}
-          </div>
-        ) : (
-          currentStop10Results.slice(0, 8).map((p, i) => {
-            const isLeader = i === 0;
-            const stoppedSeconds = (Number(p.stopped_ms || 0) / 1000).toFixed(2);
-            const diffSeconds = (Number(p.diff_ms || 0) / 1000).toFixed(2);
-
-            return (
-              <div
-                key={p.id || p.player_id}
-                className={`stop-entry ${isLeader ? "leader-highlight" : ""}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto auto",
-                  gap: 18,
-                  alignItems: "center",
-                  padding: "14px 20px",
-                  borderRadius: 16,
-                  background: isLeader
-                    ? "linear-gradient(90deg,#facc15,#eab308)"
-                    : "rgba(255,255,255,0.06)",
-                  color: isLeader ? "#000" : "#fff",
-                  fontWeight: 800,
-                  fontSize: "clamp(16px, 2vw, 25px)",
-                  border: isLeader
-                    ? "2px solid rgba(255,255,255,0.65)"
-                    : "1px solid rgba(255,255,255,0.12)",
-                  boxShadow: isLeader
-                    ? "0 0 44px rgba(250,204,21,0.55)"
-                    : "0 10px 24px rgba(0,0,0,0.20)",
-                }}
-              >
-                <span
-                  style={{
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {i + 1}. {p.player_name || "Giocatore"}
-                </span>
-
-                <span>{stoppedSeconds}s</span>
-
-                <span
-                  style={{
-                    fontSize: "0.78em",
-                    opacity: 0.82,
-                  }}
-                >
-                  Δ {diffSeconds}s
-                </span>
-              </div>
-            );
-          })
-        )}
+        Premi STOP quando pensi sia arrivato lo zero
       </div>
     </div>
   </div>
@@ -6239,7 +6265,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   </div>
 )}
 
-
 {/* =========================
    10.17 - Podio finale TV
 ========================= */}
@@ -6247,71 +6272,204 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 {game?.phase === "final" && (
   <div
     style={{
-      ...panelStyle,
-      padding: 40,
-      height: "100%",
+      minHeight: "100vh",
+      padding: 34,
+      background:
+        "radial-gradient(circle at top, rgba(250,204,21,0.24), transparent 34%), linear-gradient(135deg, #080816 0%, #190b2f 48%, #050714 100%)",
+      color: "white",
       overflow: "hidden",
     }}
   >
-    <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
-      🏆 PODIO FINALE
+    <h2
+      style={{
+        fontSize: "clamp(42px, 5vw, 78px)",
+        margin: "0 0 28px",
+        textAlign: "center",
+        fontWeight: 900,
+        letterSpacing: 3,
+        textShadow: "0 0 30px rgba(250,204,21,0.55)",
+      }}
+    >
+      🏆 TOP 5 FINALE
     </h2>
 
-    <div style={{ display: "grid", gap: 18, maxWidth: 800, margin: "0 auto" }}>
-      {finalRevealIndex >= 2 && podiumPlayers[2] && (
+    {players.length === 0 ? (
+      <div
+        style={{
+          ...panelStyle,
+          fontSize: 34,
+          textAlign: "center",
+          background: "rgba(255,255,255,0.08)",
+        }}
+      >
+        Nessun giocatore in classifica
+      </div>
+    ) : (
+      <>
         <div
           style={{
-            ...panelStyle,
-            fontSize: 34,
-            background: "rgba(205,127,50,0.22)",
-            animation: "podiumRise 0.8s ease",
+            display: "grid",
+            gridTemplateColumns: "repeat(5, minmax(130px, 1fr))",
+            gap: 18,
+            maxWidth: 1280,
+            margin: "0 auto",
+            alignItems: "stretch",
           }}
         >
-          🥉 3° POSTO — {podiumPlayers[2].name} {podiumPlayers[2].jolly_used ? "🃏" : ""} — {podiumPlayers[2].score} punti
-        </div>
-      )}
+          {sortedPlayers.slice(0, 5).map((player, index) => {
+            const position = index + 1;
+            const revealed =
+              finalRevealIndex > 0 && position >= finalRevealIndex;
 
-      {finalRevealIndex >= 1 && podiumPlayers[1] && (
-        <div
-          style={{
-            ...panelStyle,
-            fontSize: 38,
-            background: "rgba(192,192,192,0.22)",
-            animation: "podiumRise 0.8s ease",
-          }}
-        >
-          🥈 2° POSTO — {podiumPlayers[1].name} {podiumPlayers[1].jolly_used ? "🃏" : ""} — {podiumPlayers[1].score} punti
-        </div>
-      )}
+            const showNameWhileHidden =
+              !revealed &&
+              position <= 2 &&
+              finalRevealIndex > 0 &&
+              finalRevealIndex <= 3;
 
-      {finalRevealIndex >= 0 && podiumPlayers[0] && (
-        <div
-          style={{
-            ...panelStyle,
-            fontSize: 46,
-            background: "rgba(255,215,64,0.25)",
-            animation: "winnerGlow 1.6s infinite",
-            border: "2px solid rgba(255,215,64,0.8)",
-          }}
-        >
-          🥇 1° POSTO — {podiumPlayers[0].name} {podiumPlayers[0].jolly_used ? "🃏" : ""} — {podiumPlayers[0].score} punti
-          <div style={{ fontSize: 56, marginTop: 16 }}>🎉 VINCITORE! 🎉</div>
-        </div>
-      )}
+            const medal =
+              position === 1
+                ? "🥇"
+                : position === 2
+                ? "🥈"
+                : position === 3
+                ? "🥉"
+                : `#${position}`;
 
-      {players.length === 0 && (
-        <div
-          style={{
-            ...panelStyle,
-            fontSize: 34,
-            textAlign: "center",
-            background: "rgba(255,255,255,0.08)",
-          }}
-        >
-          Nessun giocatore in classifica
+            return (
+              <div
+                key={player.id}
+                style={{
+                  minHeight: position === 1 ? 370 : 310,
+                  borderRadius: 28,
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                  background: revealed
+                    ? position === 1
+                      ? "linear-gradient(180deg, rgba(250,204,21,0.38), rgba(120,53,15,0.36))"
+                      : position === 2
+                      ? "linear-gradient(180deg, rgba(229,231,235,0.28), rgba(75,85,99,0.32))"
+                      : position === 3
+                      ? "linear-gradient(180deg, rgba(205,127,50,0.30), rgba(92,45,12,0.28))"
+                      : "rgba(255,255,255,0.12)"
+                    : "linear-gradient(145deg, rgba(124,58,237,0.35), rgba(15,23,42,0.92))",
+                  border: revealed
+                    ? position === 1
+                      ? "3px solid rgba(250,204,21,0.95)"
+                      : "2px solid rgba(255,255,255,0.32)"
+                    : "2px solid rgba(255,255,255,0.18)",
+                  boxShadow: revealed
+                    ? position === 1
+                      ? "0 0 60px rgba(250,204,21,0.7)"
+                      : "0 0 30px rgba(255,255,255,0.18)"
+                    : "0 18px 38px rgba(0,0,0,0.35)",
+                  transform: revealed && position === 1 ? "scale(1.06)" : "scale(1)",
+                  transition: "all 0.7s ease",
+                  animation: revealed ? "podiumRise 0.8s ease" : "none",
+                }}
+              >
+                {!revealed ? (
+                  <>
+                    <div style={{ fontSize: 82, marginBottom: 18 }}>🎴</div>
+
+                    {showNameWhileHidden && (
+                      <div
+                        style={{
+                          marginTop: 24,
+                          fontSize: 30,
+                          fontWeight: 900,
+                          color: GOLD,
+                          textShadow: "0 0 18px rgba(250,204,21,0.8)",
+                        }}
+                      >
+                        {player.name}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        fontSize: position === 1 ? 74 : 56,
+                        marginBottom: 12,
+                      }}
+                    >
+                      {medal}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: position === 1 ? 44 : 30,
+                        fontWeight: 900,
+                        marginBottom: 12,
+                      }}
+                    >
+                      {position}° POSTO
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: position === 1 ? 48 : 32,
+                        fontWeight: 900,
+                        color: position === 1 ? GOLD : "white",
+                        textShadow:
+                          position === 1
+                            ? "0 0 28px rgba(250,204,21,0.9)"
+                            : "0 0 18px rgba(255,255,255,0.25)",
+                      }}
+                    >
+                      {player.name} {player.jolly_used ? "🃏" : ""}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 16,
+                        fontSize: position === 1 ? 36 : 25,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {player.score || 0} punti
+                    </div>
+
+                    {position === 1 && (
+                      <div
+                        style={{
+                          marginTop: 20,
+                          fontSize: 44,
+                          fontWeight: 900,
+                          animation: "winnerGlow 1.6s infinite",
+                        }}
+                      >
+                        🎉 VINCITORE! 🎉
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+
+        {finalRevealIndex === 3 && sortedPlayers.length >= 2 && (
+          <div
+            style={{
+              marginTop: 32,
+              textAlign: "center",
+              fontSize: 36,
+              fontWeight: 900,
+              color: GOLD,
+              textShadow: "0 0 25px rgba(250,204,21,0.75)",
+            }}
+          >
+            Restano solo loro due... chi avrà vinto?
+          </div>
+        )}
+      </>
+    )}
   </div>
 )}
 
@@ -6319,6 +6477,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     </div>
   );
 }
+
 
 /* =====================================================
    PARTE 11 - SCHERMATA HOST + CONTROLLI
