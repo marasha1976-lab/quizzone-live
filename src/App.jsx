@@ -538,8 +538,9 @@ const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
   const [stop10PlayerStopped, setStop10PlayerStopped] = useState(false);
   const [stop10PlayerResult, setStop10PlayerResult] = useState(null);
   const [stop10TvEffect, setStop10TvEffect] = useState(null);
-
-  const bannerTimeoutRef = useRef(null);
+const [stop10Closing, setStop10Closing] = useState(false);
+  
+const bannerTimeoutRef = useRef(null);
   const lastTvJollyEventIdRef = useRef(null);
   const tvJollyTimeoutRef = useRef(null);
   const realtimeChannelRef = useRef(null);
@@ -1033,15 +1034,17 @@ async function loadPlayersOnly(gameId) {
 
   setPlayers(sortedPlayers);
 
-  if (role === "player" && playerId) {
-    const updatedJoined = sortedPlayers.find((p) => p.id === playerId);
+if (role === "player" && joinedPlayer?.id) {
+  const updatedJoined = sortedPlayers.find(
+    (p) => p.id === joinedPlayer.id
+  );
 
-    if (updatedJoined) {
-      setJoinedPlayer(updatedJoined);
-      setJollyUsed(Boolean(updatedJoined.jolly_used));
-    }
+  if (updatedJoined) {
+    setJoinedPlayer(updatedJoined);
+    setJollyUsed(Boolean(updatedJoined.jolly_used));
   }
-
+}
+  
   return sortedPlayers;
 }
 
@@ -1708,7 +1711,7 @@ async function importCsvQuestions(file) {
       if (existingError) throw existingError;
 
       if (existing) {
-        setStatus("Nome squadra già presente, scegline un altro");
+        setStatus("Nomevgià presente, scegline un altro");
         return;
       }
 
@@ -2492,22 +2495,25 @@ async function startStop10Game() {
       stop10LockRef.current = false;
     }
   }
-
 /* =========================
    6.12 - Minigioco STOP 10: chiusura e punteggi
 ========================= */
 
 async function finishStop10Game() {
   if (!game?.id) return;
+  if (stop10Closing) return;
 
   const activeStop10RoundId = game?.stop10_round_id || stop10RoundId;
 
   if (!activeStop10RoundId) {
-    setStatus("Nessuno Stop10 attivo");
+    setStatus("Nessuno Stop Zero attivo");
     return;
   }
 
   try {
+    setStop10Closing(true);
+    setStatus("Calcolo punteggi Stop Zero in corso...");
+
     const { data: freshGame, error: gameError } = await supabase
       .from("games")
       .select("*")
@@ -2517,17 +2523,26 @@ async function finishStop10Game() {
     if (gameError) throw gameError;
 
     if (freshGame.phase !== "stop10") {
-      setStatus("Lo Stop10 non è in corso oppure è già stato chiuso");
+      setStatus("Lo Stop Zero non è in corso oppure è già stato chiuso");
       return;
     }
 
-    const { data: resultsData, error: resultsError } = await supabase
-      .from("stop10_results")
-      .select("*")
-      .eq("game_id", game.id)
-      .eq("round_id", activeStop10RoundId);
+    const [{ data: resultsData, error: resultsError }, { data: playersData, error: playersError }] =
+      await Promise.all([
+        supabase
+          .from("stop10_results")
+          .select("*")
+          .eq("game_id", game.id)
+          .eq("round_id", activeStop10RoundId),
+
+        supabase
+          .from("players")
+          .select("id, score")
+          .eq("game_id", game.id),
+      ]);
 
     if (resultsError) throw resultsError;
+    if (playersError) throw playersError;
 
     const validResults = (resultsData || [])
       .filter((r) => {
@@ -2540,47 +2555,57 @@ async function finishStop10Game() {
         return Number(b.stopped_ms || 0) - Number(a.stopped_ms || 0);
       });
 
-    if (!validResults.length) {
-      setStatus("Stop10 chiuso: nessun risultato valido");
-    }
+    const playersById = new Map(
+      (playersData || []).map((player) => [player.id, player])
+    );
 
-    const pointsByPosition = [200, 150, 100, 70, 50];
+    const updates = validResults
+      .map((result, index) => {
+        const diffMs = Number(result.diff_ms || 0);
 
-    for (let index = 0; index < validResults.length; index += 1) {
-      const result = validResults[index];
-      const points = pointsByPosition[index] || 30;
+        let points;
 
-      const { data: player, error: playerError } = await supabase
-        .from("players")
-        .select("id, score")
-        .eq("id", result.player_id)
-        .single();
+        if (index === 0) points = 200;
+        else if (index === 1) points = 150;
+        else if (index === 2) points = 100;
+        else if (index === 3) points = 50;
+        else if (index === 4) points = 30;
+        else {
+          points = Math.max(
+            5,
+            Math.round(30 - (diffMs / 10000) * 25)
+          );
+        }
 
-      if (playerError) throw playerError;
+        const player = playersById.get(result.player_id);
+        if (!player) return null;
 
-      const newScore = Number(player.score || 0) + points;
+        const newScore = Number(player.score || 0) + points;
 
-      const { error: updatePlayerError } = await supabase
-        .from("players")
-        .update({ score: newScore })
-        .eq("id", result.player_id);
+        return {
+          resultId: result.id,
+          playerId: result.player_id,
+          points,
+          newScore,
+        };
+      })
+      .filter(Boolean);
 
-      if (updatePlayerError) throw updatePlayerError;
+    await Promise.all([
+      ...updates.map((item) =>
+        supabase
+          .from("players")
+          .update({ score: item.newScore })
+          .eq("id", item.playerId)
+      ),
 
-      const { error: updateResultError } = await supabase
-        .from("stop10_results")
-        .update({ score_awarded: points })
-        .eq("id", result.id);
-
-      if (updateResultError) throw updateResultError;
-
-      if (joinedPlayer?.id === result.player_id) {
-        setJoinedPlayer((prev) => ({
-          ...prev,
-          score: newScore,
-        }));
-      }
-    }
+      ...updates.map((item) =>
+        supabase
+          .from("stop10_results")
+          .update({ score_awarded: item.points })
+          .eq("id", item.resultId)
+      ),
+    ]);
 
     const { data: updatedGame, error: updateGameError } = await supabase
       .from("games")
@@ -2598,7 +2623,7 @@ async function finishStop10Game() {
     await addLiveEvent(
       game.id,
       "stop10_results",
-      `🏆 Stop10 concluso! Assegnati punti a ${validResults.length} giocatori`
+      `🏆 Stop Zero concluso! Assegnati punti a ${updates.length} giocatori`
     );
 
     setGame(updatedGame);
@@ -2609,12 +2634,19 @@ async function finishStop10Game() {
       loadEventsOnly(game.id),
     ]);
 
-    setStatus("Stop10 concluso: punti assegnati");
+    setStatus(
+      updates.length > 0
+        ? "Stop Zero concluso: punti assegnati"
+        : "Stop Zero chiuso: nessun risultato valido"
+    );
   } catch (error) {
     console.error(error);
-    setStatus("Errore chiusura Stop10: " + error.message);
+    setStatus("Errore chiusura Stop Zero: " + error.message);
+  } finally {
+    setStop10Closing(false);
   }
 }
+
   
   /* =========================
      6.13 - Elimina singola domanda e riordina
@@ -3480,6 +3512,7 @@ useEffect(() => {
   };
 }, [game?.phase]);
 
+
 /* =========================
    7.17B - Reveal progressivo classifica provvisoria TV
 ========================= */
@@ -3499,7 +3532,9 @@ useEffect(() => {
     return;
   }
 
-  setLeaderboardRevealCount(1);
+  const instantPlayers = Math.max(0, totalPlayers - 5);
+
+  setLeaderboardRevealCount(instantPlayers);
 
   const interval = setInterval(() => {
     setLeaderboardRevealCount((current) => {
@@ -3510,11 +3545,10 @@ useEffect(() => {
 
       return current + 1;
     });
-  }, 3000);
+  }, 2500);
 
   return () => clearInterval(interval);
 }, [role, game?.show_leaderboard, game?.phase, players.length]);
-
 /* =========================
    7.18 - AUTOSCALE PLAYER DISATTIVATO
 ========================= */
@@ -3535,6 +3569,7 @@ useEffect(() => {
 /* =====================================================
    PARTE 8 - STILI LOCALI E FUNZIONI RENDER
 ===================================================== */
+
 
 /* =========================
    8.1 - Stili base layout
@@ -3574,6 +3609,36 @@ const buttonStyle = {
   boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
 };
 
+/* ===== STILI TV RESPONSIVE / ADATTIVI ===== */
+
+const tvScrollBoxStyle = {
+  minHeight: 0,
+  overflowY: "auto",
+  overflowX: "hidden",
+  paddingRight: 8,
+  scrollbarWidth: "thin",
+};
+
+const tvFullScreenPanelStyle = {
+  ...panelStyle,
+  height: "100%",
+  minHeight: 0,
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const tvAdaptiveTitleStyle = {
+  fontSize: "clamp(34px, 4.2vw, 56px)",
+  marginBottom: 18,
+  textAlign: "center",
+  flexShrink: 0,
+};
+
+const tvAdaptiveRowTextStyle = {
+  fontSize: "clamp(18px, 2.2vw, 32px)",
+  lineHeight: 1.15,
+};
 
 /* =========================
    8.2 - Stili feedback e media
@@ -4077,7 +4142,7 @@ if (role === "player" && !joinedPlayer) {
 
         <div style={{ marginTop: 18 }}>
           <input
-            placeholder="Nome squadra"
+            placeholder="Nome giocatore o squadra"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
             style={{
@@ -5222,115 +5287,112 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       )}
 
 {/* =========================
-   10.8 - TV STOP10 RISULTATI (FIX DEFINITIVO)
+   10.8 - TV STOP10 RISULTATI
 ========================= */}
 
-{effectivePhase === "stop10_results" && !Boolean(game?.show_leaderboard) && (() => {
-  const sorted = [...(stop10Results || [])].sort(
-    (a, b) => Number(a.diff_ms || 0) - Number(b.diff_ms || 0)
-  );
+{effectivePhase === "stop10_results" && !game?.show_leaderboard && (
+  <div
+    style={{
+      ...tvFullScreenPanelStyle,
+      justifyContent: "flex-start",
+      padding: "clamp(18px, 3vw, 40px)",
+      boxSizing: "border-box",
+      textAlign: "center",
+      gap: 18,
+    }}
+  >
+    <h2 style={tvAdaptiveTitleStyle}>
+      ⏱️ RISULTATI STOP ZERO
+    </h2>
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "radial-gradient(circle at center, #020617 0%, #000 100%)",
-        color: "white",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        overflow: "hidden",
-        zIndex: 9996,
-      }}
-    >
-      {/* TITOLO */}
+    {currentStop10Results.length === 0 ? (
       <div
         style={{
-          fontSize: 60,
-          fontWeight: "bold",
-          marginBottom: 40,
-          textShadow: "0 0 20px rgba(255,255,255,0.3)",
+          fontSize: "clamp(24px, 3vw, 42px)",
+          opacity: 0.85,
+          marginTop: 40,
         }}
       >
-        ⏱ STOP A 10 SECONDI
+        Nessun risultato registrato
       </div>
-
-      {/* LISTA */}
-      <div style={{ width: "80%", maxWidth: 900 }}>
-        {sorted.map((p, i) => {
-          const isWinner = i === 0;
-          const seconds = (Number(p.stopped_ms || 0) / 1000).toFixed(2);
-          const diff = (Number(p.diff_ms || 0) / 1000).toFixed(2);
+    ) : (
+      <div
+        style={{
+          ...tvScrollBoxStyle,
+          width: "min(1100px, 94vw)",
+          flex: 1,
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        {currentStop10Results.map((result, index) => {
+          const isWinner = index === 0;
 
           return (
             <div
-              key={p.id || p.player_id}
+              key={result.id}
               style={{
-                marginBottom: 15,
-                padding: "15px 25px",
-                borderRadius: 12,
-                display: "grid",
-                gridTemplateColumns: "1fr auto auto auto",
-                gap: 22,
+                ...panelStyle,
+                display: "flex",
+                justifyContent: "space-between",
                 alignItems: "center",
+                gap: 20,
+                padding: "clamp(12px, 1.5vw, 20px)",
+                fontSize: "clamp(18px, 2vw, 30px)",
                 background: isWinner
-                  ? "linear-gradient(135deg,#facc15,#ca8a04)"
-                  : "rgba(255,255,255,0.05)",
-                color: isWinner ? "#111827" : "white",
-                animation: "slideUp 0.6s ease forwards",
+                  ? "rgba(250,204,21,0.22)"
+                  : "rgba(255,255,255,0.08)",
+                border: isWinner
+                  ? "2px solid rgba(250,204,21,0.55)"
+                  : BORDER,
+                animation: isWinner
+                  ? "winnerPulse 1.2s ease-in-out infinite"
+                  : "slideUp 0.45s ease",
               }}
             >
-              {/* NOME */}
-              <div style={{ fontSize: 26, fontWeight: "bold" }}>
-                {i + 1}. {p.player_name}
-              </div>
-
-              {/* TEMPO */}
-              <div style={{ fontSize: 26 }}>
-                {seconds}s
-              </div>
-
-              {/* DIFFERENZA */}
-              <div style={{ fontSize: 20, opacity: 0.75 }}>
-                Δ {diff}s
-              </div>
-
-              {/* PUNTI */}
               <div
                 style={{
-                  fontSize: 24,
                   fontWeight: "bold",
-                  color: isWinner ? "#14532d" : "#22c55e",
+                  textAlign: "left",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
-                +{p.score_awarded || 0}
+                {index + 1}. {result.player_name}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 18,
+                  flexShrink: 0,
+                  fontWeight: "bold",
+                }}
+              >
+                <span style={{ color: GOLD }}>
+                  {(Number(result.stopped_ms || 0) / 1000).toFixed(2)}s
+                </span>
+
+                <span style={{ opacity: 0.8 }}>
+                  ±{(Number(result.diff_ms || 0) / 1000).toFixed(2)}s
+                </span>
+
+                <span style={{ color: GREEN }}>
+                  +{Number(result.score_awarded || 0)}
+                </span>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* VINCITORE */}
-      {sorted[0] && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 80,
-            fontSize: 50,
-            fontWeight: "bold",
-            color: "#facc15",
-            textShadow: "0 0 25px rgba(250,204,21,0.9)",
-            animation: "winnerPop 1s ease forwards",
-          }}
-        >
-          🏆 VINCE {String(sorted[0].player_name || "").toUpperCase()}
-        </div>
-      )}
-    </div>
-  );
-})()}
+    )}
+  </div>
+)}
       
 {/* =========================
    10.9 - STILI GLOBALI TV
@@ -5609,13 +5671,21 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       display: "flex",
       flexDirection: "column",
       overflow: "hidden",
+      padding: "clamp(8px, 1vw, 16px)",
+      boxSizing: "border-box",
     }}
   >
     {/* HEADER */}
-    <div style={{ textAlign: "center", marginBottom: 6, flexShrink: 0 }}>
+    <div
+      style={{
+        textAlign: "center",
+        marginBottom: "clamp(6px, 1vw, 12px)",
+        flexShrink: 0,
+      }}
+    >
       <h1
         style={{
-          fontSize: "clamp(28px, 3vw, 48px)",
+          fontSize: "clamp(26px, 3vw, 52px)",
           margin: 0,
           lineHeight: 1.05,
         }}
@@ -5623,7 +5693,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         🍻 {getGameTitle(game)}
       </h1>
 
-      <div style={{ fontSize: "clamp(14px, 1.4vw, 22px)", opacity: 0.9 }}>
+      <div style={{ fontSize: "clamp(14px, 1.3vw, 22px)", opacity: 0.9 }}>
         Inquadra il QR e unisciti
       </div>
     </div>
@@ -5634,20 +5704,23 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         flex: 1,
         minHeight: 0,
         display: "grid",
-        gridTemplateColumns: "0.8fr 1.2fr",
-        gap: 12,
+        gridTemplateColumns: players.length >= 35 ? "0.65fr 1.35fr" : "0.8fr 1.2fr",
+        gap: "clamp(8px, 1vw, 14px)",
+        overflow: "hidden",
       }}
     >
       {/* ===== SINISTRA (QR) ===== */}
       <div
         style={{
           ...panelStyle,
-          padding: 10,
+          padding: "clamp(8px, 1vw, 14px)",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: 6,
+          gap: "clamp(6px, 1vw, 12px)",
+          minHeight: 0,
+          overflow: "hidden",
         }}
       >
         <div
@@ -5655,24 +5728,26 @@ const renderTvQuestionMedia = (question, variant = "question") => {
             background: "white",
             padding: 6,
             borderRadius: 14,
+            flexShrink: 0,
           }}
         >
           <QRCodeSVG
             value={PLAYER_JOIN_URL}
-            size={170}
+            size={players.length >= 35 ? 150 : 170}
             style={{
               display: "block",
-              width: "170px",
-              height: "170px",
+              width: players.length >= 35 ? "150px" : "170px",
+              height: players.length >= 35 ? "150px" : "170px",
             }}
           />
         </div>
 
         <div
           style={{
-            fontSize: "clamp(14px, 1.2vw, 20px)",
+            fontSize: "clamp(13px, 1.1vw, 20px)",
             fontWeight: "bold",
             textAlign: "center",
+            lineHeight: 1.15,
           }}
         >
           📱 Inquadra per partecipare
@@ -5680,7 +5755,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 
         <div
           style={{
-            fontSize: "clamp(13px, 1vw, 18px)",
+            fontSize: "clamp(12px, 1vw, 18px)",
             color: GOLD,
             fontWeight: "bold",
           }}
@@ -5693,17 +5768,18 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       <div
         style={{
           ...panelStyle,
-          padding: 12,
+          padding: "clamp(8px, 1vw, 14px)",
           display: "flex",
           flexDirection: "column",
           minHeight: 0,
+          overflow: "hidden",
         }}
       >
         <div
           style={{
             textAlign: "center",
             fontWeight: "bold",
-            fontSize: "clamp(20px, 1.6vw, 28px)",
+            fontSize: "clamp(18px, 1.6vw, 28px)",
             marginBottom: 8,
             flexShrink: 0,
           }}
@@ -5721,6 +5797,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
               borderRadius: 14,
               background: "rgba(255,255,255,0.05)",
               border: "1px solid rgba(255,255,255,0.12)",
+              fontSize: "clamp(18px, 2vw, 30px)",
             }}
           >
             Nessuno collegato
@@ -5730,30 +5807,48 @@ const renderTvQuestionMedia = (question, variant = "question") => {
             style={{
               flex: 1,
               minHeight: 0,
-              display: "grid",
-              gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, 1fr)`,
-              gap: 8,
-              overflow: "hidden",
+              maxHeight: "100%",
+              overflowY: "auto",
+              overflowX: "hidden",
+              paddingRight: 6,
             }}
           >
-            {players.map((p, i) => (
-              <div
-                key={p.id}
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  padding: tvLobbyPlayerPadding,
-                  fontSize: tvLobbyPlayerFontSize,
-                  fontWeight: "bold",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {i + 1}. {p.name}
-              </div>
-            ))}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${tvLobbyPlayerColumns}, minmax(0, 1fr))`,
+                gap: players.length >= 40 ? 6 : 8,
+                alignContent: "start",
+              }}
+            >
+              {players.map((p, i) => (
+                <div
+                  key={p.id}
+                  title={p.name}
+                  style={{
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 12,
+                    padding:
+                      players.length >= 40
+                        ? "6px 9px"
+                        : tvLobbyPlayerPadding,
+                    fontSize:
+                      players.length >= 40
+                        ? "clamp(13px, 1vw, 17px)"
+                        : tvLobbyPlayerFontSize,
+                    lineHeight: 1.15,
+                    fontWeight: "bold",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                  }}
+                >
+                  {i + 1}. {p.name}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -5761,14 +5856,13 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   </div>
 )}
 
-
 {/* =========================
-   10.12 - Classifica provvisoria TV con reveal completo dall'ultimo al primo
+   10.12 - Classifica provvisoria TV responsive
 ========================= */}
 
 {Boolean(game?.show_leaderboard) && game?.phase !== "final" && (
-  <div style={{ ...panelStyle, padding: 40, height: "100%", overflow: "hidden" }}>
-    <h2 style={{ fontSize: 56, marginBottom: 24, textAlign: "center" }}>
+  <div style={{ ...tvFullScreenPanelStyle, padding: "clamp(18px, 3vw, 40px)" }}>
+    <h2 style={tvAdaptiveTitleStyle}>
       🏆 CLASSIFICA PROVVISORIA
     </h2>
 
@@ -5781,7 +5875,9 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         const sortedPlayers = [...players].sort((a, b) => {
           const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
           if (scoreDiff !== 0) return scoreDiff;
-          return (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" });
+          return (a.name || "").localeCompare(b.name || "", "it", {
+            sensitivity: "base",
+          });
         });
 
         const revealCount = Math.min(
@@ -5795,18 +5891,20 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         return (
           <div
             style={{
-              height: "calc(100% - 100px)",
-              maxWidth: 1000,
+              ...tvScrollBoxStyle,
+              flex: 1,
+              maxWidth: 1100,
+              width: "100%",
               margin: "0 auto",
               display: "flex",
-              flexDirection: "column-reverse",
-              gap: 14,
-              overflow: "hidden",
-              justifyContent: "flex-start",
+              flexDirection: "column",
+              gap: 12,
             }}
           >
             {visiblePlayers.map((p) => {
-              const realIndex = sortedPlayers.findIndex((player) => player.id === p.id);
+              const realIndex = sortedPlayers.findIndex(
+                (player) => player.id === p.id
+              );
               const position = realIndex + 1;
               const isFinalWinner =
                 position === 1 && revealCount >= sortedPlayers.length;
@@ -5816,45 +5914,49 @@ const renderTvQuestionMedia = (question, variant = "question") => {
                   key={p.id}
                   style={{
                     ...panelStyle,
-                    fontSize: position <= 3 ? 36 : 30,
+                    ...tvAdaptiveRowTextStyle,
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    padding: "16px 22px",
+                    gap: 18,
+                    padding: "clamp(10px, 1.4vw, 18px) clamp(14px, 2vw, 24px)",
                     background:
                       position === 1
                         ? "rgba(255,215,64,0.24)"
                         : position === 2
-                        ? "rgba(192,192,192,0.20)"
+                        ? "rgba(203,213,225,0.18)"
                         : position === 3
-                        ? "rgba(205,127,50,0.20)"
-                        : "rgba(255,255,255,0.07)",
+                        ? "rgba(180,83,9,0.18)"
+                        : "rgba(255,255,255,0.08)",
                     border:
-                      position === 1
-                        ? "2px solid rgba(255,215,64,0.85)"
-                        : position === 2
-                        ? "2px solid rgba(229,231,235,0.45)"
-                        : position === 3
-                        ? "2px solid rgba(205,127,50,0.55)"
-                        : "1px solid rgba(255,255,255,0.14)",
+                      position <= 3
+                        ? "2px solid rgba(250,204,21,0.45)"
+                        : BORDER,
                     animation: isFinalWinner
-                      ? "winnerGlow 1.4s infinite"
-                      : "slideUp 0.55s ease",
+                      ? "winnerPulse 1s ease-in-out infinite"
+                      : "slideUp 0.45s ease",
                   }}
                 >
-                  <span>
-                    {position === 1
-                      ? "🥇"
-                      : position === 2
-                      ? "🥈"
-                      : position === 3
-                      ? "🥉"
-                      : `#${position}`}{" "}
-                    {p.name} {p.jolly_used ? "🃏" : ""}
+                  <span
+                    style={{
+                      fontWeight: "bold",
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {position}. {p.name}
                   </span>
 
-                  <span style={{ color: GOLD, fontWeight: "bold" }}>
-                    {p.score || 0} pt
+                  <span
+                    style={{
+                      color: GOLD,
+                      fontWeight: "bold",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {Number(p.score || 0)} pt
                   </span>
                 </div>
               );
@@ -6272,21 +6374,25 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 {game?.phase === "final" && (
   <div
     style={{
-      minHeight: "100vh",
-      padding: 34,
+      height: "100dvh",
+      padding: "70px 22px 18px",
+      boxSizing: "border-box",
       background:
-        "radial-gradient(circle at top, rgba(250,204,21,0.24), transparent 34%), linear-gradient(135deg, #080816 0%, #190b2f 48%, #050714 100%)",
+        "radial-gradient(circle at top, rgba(250,204,21,0.22), transparent 34%), linear-gradient(135deg, #080816 0%, #190b2f 48%, #050714 100%)",
       color: "white",
       overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
     }}
   >
     <h2
       style={{
-        fontSize: "clamp(42px, 5vw, 78px)",
-        margin: "0 0 28px",
+        fontSize: "clamp(30px, 4vw, 52px)",
+        margin: "0 0 12px",
         textAlign: "center",
         fontWeight: 900,
         letterSpacing: 3,
+        lineHeight: 1,
         textShadow: "0 0 30px rgba(250,204,21,0.55)",
       }}
     >
@@ -6299,176 +6405,130 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           ...panelStyle,
           fontSize: 34,
           textAlign: "center",
-          background: "rgba(255,255,255,0.08)",
         }}
       >
         Nessun giocatore in classifica
       </div>
     ) : (
-      <>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(5, minmax(130px, 1fr))",
-            gap: 18,
-            maxWidth: 1280,
-            margin: "0 auto",
-            alignItems: "stretch",
-          }}
-        >
-          {sortedPlayers.slice(0, 5).map((player, index) => {
-            const position = index + 1;
-            const revealed =
-              finalRevealIndex > 0 && position >= finalRevealIndex;
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "grid",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gap: 14,
+          alignItems: "end",
+          transform: "translateY(-55px)",
+          maxWidth: 1500,
+          margin: "0 auto",
+          width: "100%",
+          overflow: "hidden",
+        }}
+      >
+        {sortedPlayers.slice(0, 5).map((player, index) => {
+          const position = index + 1;
 
-            const showNameWhileHidden =
-              !revealed &&
-              position <= 2 &&
-              finalRevealIndex > 0 &&
-              finalRevealIndex <= 3;
+          const cardHeight =
+            position === 1
+              ? "88%"
+              : position === 2
+              ? "78%"
+              : position === 3
+              ? "70%"
+              : position === 4
+              ? "62%"
+              : "56%";
 
-            const medal =
-              position === 1
-                ? "🥇"
-                : position === 2
-                ? "🥈"
-                : position === 3
-                ? "🥉"
-                : `#${position}`;
+          const medal =
+            position === 1
+              ? "🥇"
+              : position === 2
+              ? "🥈"
+              : position === 3
+              ? "🥉"
+              : `#${position}`;
 
-            return (
+          return (
+            <div
+              key={player.id}
+              style={{
+                height: cardHeight,
+                borderRadius: 24,
+                padding: 14,
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                gap: 10,
+                alignItems: "center",
+                textAlign: "center",
+                overflow: "hidden",
+                background:
+                  position === 1
+                    ? "linear-gradient(180deg, rgba(250,204,21,0.42), rgba(120,53,15,0.34))"
+                    : position === 2
+                    ? "linear-gradient(180deg, rgba(226,232,240,0.30), rgba(71,85,105,0.30))"
+                    : position === 3
+                    ? "linear-gradient(180deg, rgba(205,127,50,0.32), rgba(92,45,20,0.28))"
+                    : "rgba(255,255,255,0.10)",
+                border: "2px solid rgba(255,255,255,0.18)",
+                boxShadow:
+                  position === 1
+                    ? "0 0 30px rgba(250,204,21,0.55)"
+                    : "0 10px 22px rgba(0,0,0,0.35)",
+              }}
+            >
+              <div style={{ fontSize: position === 1 ? 52 : 40 }}>
+                {medal}
+              </div>
+
               <div
-                key={player.id}
                 style={{
-                  minHeight: position === 1 ? 370 : 310,
-                  borderRadius: 28,
-                  padding: 20,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                  background: revealed
-                    ? position === 1
-                      ? "linear-gradient(180deg, rgba(250,204,21,0.38), rgba(120,53,15,0.36))"
-                      : position === 2
-                      ? "linear-gradient(180deg, rgba(229,231,235,0.28), rgba(75,85,99,0.32))"
-                      : position === 3
-                      ? "linear-gradient(180deg, rgba(205,127,50,0.30), rgba(92,45,12,0.28))"
-                      : "rgba(255,255,255,0.12)"
-                    : "linear-gradient(145deg, rgba(124,58,237,0.35), rgba(15,23,42,0.92))",
-                  border: revealed
-                    ? position === 1
-                      ? "3px solid rgba(250,204,21,0.95)"
-                      : "2px solid rgba(255,255,255,0.32)"
-                    : "2px solid rgba(255,255,255,0.18)",
-                  boxShadow: revealed
-                    ? position === 1
-                      ? "0 0 60px rgba(250,204,21,0.7)"
-                      : "0 0 30px rgba(255,255,255,0.18)"
-                    : "0 18px 38px rgba(0,0,0,0.35)",
-                  transform: revealed && position === 1 ? "scale(1.06)" : "scale(1)",
-                  transition: "all 0.7s ease",
-                  animation: revealed ? "podiumRise 0.8s ease" : "none",
+                  fontSize: position === 1 ? 28 : 21,
+                  fontWeight: 900,
                 }}
               >
-                {!revealed ? (
-                  <>
-                    <div style={{ fontSize: 82, marginBottom: 18 }}>🎴</div>
-
-                    {showNameWhileHidden && (
-                      <div
-                        style={{
-                          marginTop: 24,
-                          fontSize: 30,
-                          fontWeight: 900,
-                          color: GOLD,
-                          textShadow: "0 0 18px rgba(250,204,21,0.8)",
-                        }}
-                      >
-                        {player.name}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div
-                      style={{
-                        fontSize: position === 1 ? 74 : 56,
-                        marginBottom: 12,
-                      }}
-                    >
-                      {medal}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: position === 1 ? 44 : 30,
-                        fontWeight: 900,
-                        marginBottom: 12,
-                      }}
-                    >
-                      {position}° POSTO
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: position === 1 ? 48 : 32,
-                        fontWeight: 900,
-                        color: position === 1 ? GOLD : "white",
-                        textShadow:
-                          position === 1
-                            ? "0 0 28px rgba(250,204,21,0.9)"
-                            : "0 0 18px rgba(255,255,255,0.25)",
-                      }}
-                    >
-                      {player.name} {player.jolly_used ? "🃏" : ""}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 16,
-                        fontSize: position === 1 ? 36 : 25,
-                        fontWeight: 800,
-                      }}
-                    >
-                      {player.score || 0} punti
-                    </div>
-
-                    {position === 1 && (
-                      <div
-                        style={{
-                          marginTop: 20,
-                          fontSize: 44,
-                          fontWeight: 900,
-                          animation: "winnerGlow 1.6s infinite",
-                        }}
-                      >
-                        🎉 VINCITORE! 🎉
-                      </div>
-                    )}
-                  </>
-                )}
+                {position}° POSTO
               </div>
-            );
-          })}
-        </div>
 
-        {finalRevealIndex === 3 && sortedPlayers.length >= 2 && (
-          <div
-            style={{
-              marginTop: 32,
-              textAlign: "center",
-              fontSize: 36,
-              fontWeight: 900,
-              color: GOLD,
-              textShadow: "0 0 25px rgba(250,204,21,0.75)",
-            }}
-          >
-            Restano solo loro due... chi avrà vinto?
-          </div>
-        )}
-      </>
+              <div
+                style={{
+                  fontSize: position === 1 ? 16 : 13,
+                  fontWeight: 900,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: "100%",
+                }}
+              >
+                {player.name}
+              </div>
+
+              <div
+                style={{
+                  fontSize: position === 1 ? 26 : 20,
+                  fontWeight: 900,
+                  color: GOLD,
+                }}
+              >
+                {player.score || 0} pt
+              </div>
+
+              {position === 1 && (
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 900,
+                    color: GOLD,
+                  }}
+                >
+                  🎉 VINCITORE
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     )}
   </div>
 )}
@@ -6477,7 +6537,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     </div>
   );
 }
-
 
 /* =====================================================
    PARTE 11 - SCHERMATA HOST + CONTROLLI
