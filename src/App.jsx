@@ -109,6 +109,9 @@ const LOGO_BG = "/images/logo.png";
 const STOPZERO_BG = "/images/stopzero.png";
 const STOPZERO_AUDIO = "/media/stop10_intro.mp3";
 const STOPZERO_PLAYER_BG = "/images/stopzeroplayer.png";
+const STOPZERO_TENSION_AUDIO = "/media/stop10_tension.mp3";
+const STOPZERO_BUZZER_AUDIO = "/media/stop10_buzzer.mp3";
+const FINAL_PODIUM_AUDIO = "/media/classificafinale.mp3";
 
 const PLAYER_JOIN_URL = "https://quizzone-live-three.vercel.app/?role=player";
 const tvLogoStyle = {
@@ -488,7 +491,7 @@ function useRevealAudio() {
 }
 
 /* =====================================================
-    4A - COPARTEMPONENTE APP: STATE E REF
+   PARTE 4A - COMPONENTE APP: STATE E REF
 ===================================================== */
 
 export default function App() {
@@ -501,8 +504,8 @@ export default function App() {
   const [answers, setAnswers] = useState([]);
   const [liveEvents, setLiveEvents] = useState([]);
   const [roundName, setRoundName] = useState("");
-const [mediaCheckReport, setMediaCheckReport] = useState([]);
-const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
+  const [mediaCheckReport, setMediaCheckReport] = useState([]);
+  const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
   const [liveCsvRow, setLiveCsvRow] = useState("");
   const [liveCsvPreview, setLiveCsvPreview] = useState(null);
   const [liveCsvError, setLiveCsvError] = useState("");
@@ -538,9 +541,10 @@ const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
   const [stop10PlayerStopped, setStop10PlayerStopped] = useState(false);
   const [stop10PlayerResult, setStop10PlayerResult] = useState(null);
   const [stop10TvEffect, setStop10TvEffect] = useState(null);
-const [stop10Closing, setStop10Closing] = useState(false);
-  
-const bannerTimeoutRef = useRef(null);
+  const [stop10ExpiredFlash, setStop10ExpiredFlash] = useState(false);
+  const [stop10Closing, setStop10Closing] = useState(false);
+
+  const bannerTimeoutRef = useRef(null);
   const lastTvJollyEventIdRef = useRef(null);
   const tvJollyTimeoutRef = useRef(null);
   const realtimeChannelRef = useRef(null);
@@ -553,6 +557,14 @@ const bannerTimeoutRef = useRef(null);
   const lastRevealQuestionIdRef = useRef(null);
   const lastTvQuestionAudioKeyRef = useRef(null);
   const tvQuestionAudioRef = useRef(null);
+
+  const finalPodiumAudioRef = useRef(null);
+  const finalPodiumAudioPlayedRef = useRef(false);
+
+  const stop10TensionAudioRef = useRef(null);
+  const stop10BuzzerAudioRef = useRef(null);
+  const stop10TensionRoundRef = useRef(null);
+  const stop10BuzzerRoundRef = useRef(null);
 
   const playerQuestionOuterRef = useRef(null);
   const playerQuestionInnerRef = useRef(null);
@@ -610,9 +622,8 @@ const bannerTimeoutRef = useRef(null);
     return () => clearInterval(id);
   }, [syncServerClock]);
 
-  const { unlockAudio, startSyncedCountdown, stopCountdownAudio } = useCountdownAudio(
-    () => syncedNowRef.current
-  );
+  const { unlockAudio, startSyncedCountdown, stopCountdownAudio } =
+    useCountdownAudio(() => syncedNowRef.current);
 
   const { playRevealAudio } = useRevealAudio();
 
@@ -634,9 +645,7 @@ const bannerTimeoutRef = useRef(null);
 
         try {
           await audioEl.play();
-        } catch {
-          // ignore
-        }
+        } catch {}
 
         audioEl.pause();
         audioEl.currentTime = 0;
@@ -644,6 +653,64 @@ const bannerTimeoutRef = useRef(null);
         audioEl.removeAttribute("src");
         audioEl.load();
       }
+
+      if (!stop10TensionAudioRef.current) {
+        stop10TensionAudioRef.current = new Audio(STOPZERO_TENSION_AUDIO);
+        stop10TensionAudioRef.current.preload = "auto";
+        stop10TensionAudioRef.current.playsInline = true;
+      }
+
+      if (!stop10BuzzerAudioRef.current) {
+        stop10BuzzerAudioRef.current = new Audio(STOPZERO_BUZZER_AUDIO);
+        stop10BuzzerAudioRef.current.preload = "auto";
+        stop10BuzzerAudioRef.current.playsInline = true;
+      }
+
+      if (!finalPodiumAudioRef.current) {
+        finalPodiumAudioRef.current = new Audio(FINAL_PODIUM_AUDIO);
+        finalPodiumAudioRef.current.preload = "auto";
+        finalPodiumAudioRef.current.playsInline = true;
+      }
+
+      const tension = stop10TensionAudioRef.current;
+      tension.pause();
+      tension.currentTime = 0;
+      tension.muted = true;
+
+      try {
+        await tension.play();
+      } catch {}
+
+      tension.pause();
+      tension.currentTime = 0;
+      tension.muted = false;
+
+      const buzzer = stop10BuzzerAudioRef.current;
+      buzzer.pause();
+      buzzer.currentTime = 0;
+      buzzer.muted = true;
+
+      try {
+        await buzzer.play();
+      } catch {}
+
+      buzzer.pause();
+      buzzer.currentTime = 0;
+      buzzer.muted = false;
+
+      const finalAudio = finalPodiumAudioRef.current;
+      finalAudio.pause();
+      finalAudio.currentTime = 0;
+      finalAudio.muted = true;
+
+      try {
+        await finalAudio.play();
+      } catch {}
+
+      finalAudio.pause();
+      finalAudio.currentTime = 0;
+      finalAudio.muted = false;
+
     } catch {
       // ignore
     }
@@ -703,6 +770,7 @@ const stop10HideTimer = !stop10WaitingToStart && stop10ElapsedMs >= 5000;
 
 const stop10DisplayTime = useMemo(() => {
   if (stop10WaitingToStart) return "10.0";
+  if (stop10ElapsedMs >= 10000) return "TEMPO SCADUTO";
   if (stop10ElapsedMs >= 5000) return "???";
 
   const remaining = Math.max(0, 10 - stop10ElapsedMs / 1000);
@@ -717,6 +785,92 @@ const stop10IsRunning =
 const stop10IsFinished =
   effectivePhase === "stop10_results" ||
   (!stop10WaitingToStart && stop10ElapsedMs >= 10000);
+
+/* ===== HOST TIMER ===== */
+
+const hostDisplayedTime = useMemo(() => {
+  if (effectivePhase === "countdown") return countdownTimeLeft;
+  if (effectivePhase === "question") return localTimeLeft;
+
+  if (effectivePhase === "stop10") {
+    return Math.max(0, Math.ceil((10000 - stop10ElapsedMs) / 1000));
+  }
+
+  return 0;
+}, [effectivePhase, countdownTimeLeft, localTimeLeft, stop10ElapsedMs]);
+
+/* AUDIO TENSIONE STOP ZERO - SOLO TV */
+
+useEffect(() => {
+  if (role !== "tv") return;
+  if (effectivePhase !== "stop10") return;
+  if (stop10WaitingToStart) return;
+  if (!stop10RoundId) return;
+
+  if (stop10TensionRoundRef.current === stop10RoundId) return;
+
+  stop10TensionRoundRef.current = stop10RoundId;
+
+  try {
+    if (!stop10TensionAudioRef.current) {
+      stop10TensionAudioRef.current = new Audio(STOPZERO_TENSION_AUDIO);
+      stop10TensionAudioRef.current.preload = "auto";
+      stop10TensionAudioRef.current.playsInline = true;
+    }
+
+    const audio = stop10TensionAudioRef.current;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  } catch {
+    // ignore
+  }
+}, [
+  role,
+  effectivePhase,
+  stop10WaitingToStart,
+  stop10RoundId,
+]);
+
+/* BUZZER TEMPO SCADUTO STOP ZERO - SOLO TV */
+
+useEffect(() => {
+  if (role !== "tv") return;
+  if (effectivePhase !== "stop10") return;
+  if (stop10WaitingToStart) return;
+  if (!stop10RoundId) return;
+  if (stop10ElapsedMs < 10000) return;
+
+  if (stop10BuzzerRoundRef.current === stop10RoundId) return;
+
+  stop10BuzzerRoundRef.current = stop10RoundId;
+
+  try {
+    if (stop10TensionAudioRef.current) {
+      stop10TensionAudioRef.current.pause();
+      stop10TensionAudioRef.current.currentTime = 0;
+    }
+
+    if (!stop10BuzzerAudioRef.current) {
+      stop10BuzzerAudioRef.current = new Audio(STOPZERO_BUZZER_AUDIO);
+      stop10BuzzerAudioRef.current.preload = "auto";
+      stop10BuzzerAudioRef.current.playsInline = true;
+    }
+
+    const buzzer = stop10BuzzerAudioRef.current;
+    buzzer.pause();
+    buzzer.currentTime = 0;
+    buzzer.play().catch(() => {});
+  } catch {
+    // ignore
+  }
+}, [
+  role,
+  effectivePhase,
+  stop10WaitingToStart,
+  stop10RoundId,
+  stop10ElapsedMs,
+]);
 
 const currentStop10Results = useMemo(() => {
   if (!stop10RoundId) return [];
@@ -737,20 +891,6 @@ const myStop10Result = useMemo(() => {
     ) || null
   );
 }, [stop10Results, stop10RoundId, joinedPlayer?.id]);
-
-
-/* ===== HOST TIMER ===== */
-
-const hostDisplayedTime = useMemo(() => {
-  if (effectivePhase === "countdown") return countdownTimeLeft;
-  if (effectivePhase === "question") return localTimeLeft;
-
-  if (effectivePhase === "stop10") {
-    return Math.max(0, Math.ceil((10000 - stop10ElapsedMs) / 1000));
-  }
-
-  return 0;
-}, [effectivePhase, countdownTimeLeft, localTimeLeft, stop10ElapsedMs]);
 
 /* ===== DOMANDA ===== */
 
@@ -2350,6 +2490,7 @@ setMediaCheckRunning(false);
       submitLockRef.current = false;
     }
   }
+
 /* =========================
    6.10 - Minigioco STOP 10: avvio host
 ========================= */
@@ -2357,12 +2498,15 @@ setMediaCheckRunning(false);
 async function startStop10Game() {
   if (!game?.id) return;
 
-  const INTRO_DURATION_MS = 32000; // durata audio intro circa 32 secondi
+  const INTRO_DURATION_MS = 25000;
 
   try {
     setStatus("Intro Stop Zero avviata");
 
-    await supabase.from("stop10_results").delete().eq("game_id", game.id);
+    await supabase
+      .from("stop10_results")
+      .delete()
+      .eq("game_id", game.id);
 
     const { data, error } = await supabase
       .from("games")
@@ -2393,10 +2537,29 @@ async function startStop10Game() {
     setStop10Results([]);
     setStop10PlayerStopped(false);
     setStop10PlayerResult(null);
+    setStop10ExpiredFlash(false);
+
     stop10LockRef.current = false;
+    stop10TensionRoundRef.current = null;
+    stop10BuzzerRoundRef.current = null;
+
+    try {
+      if (stop10TensionAudioRef.current) {
+        stop10TensionAudioRef.current.pause();
+        stop10TensionAudioRef.current.currentTime = 0;
+      }
+
+      if (stop10BuzzerAudioRef.current) {
+        stop10BuzzerAudioRef.current.pause();
+        stop10BuzzerAudioRef.current.currentTime = 0;
+      }
+    } catch {
+      // ignore
+    }
 
     window.setTimeout(async () => {
       const roundId = Date.now();
+
       const startedAtMs = Math.round(
         syncedNowRef.current + SYNC_START_GRACE_MS
       );
@@ -2434,12 +2597,12 @@ async function startStop10Game() {
         setStatus("Errore avvio Stop Zero: " + startError.message);
       }
     }, INTRO_DURATION_MS);
+
   } catch (error) {
     console.error(error);
     setStatus("Errore intro Stop Zero: " + error.message);
   }
 }
-
       
   /* =========================
      6.11 - Minigioco STOP 10: stop player
@@ -3474,28 +3637,40 @@ useEffect(() => {
 
 
 /* =========================
-   7.16 - Cleanup generale TV
-========================= */
-
-useEffect(() => {
-  return () => {
-    stopCountdownAudio();
-    if (tvJollyTimeoutRef.current) clearTimeout(tvJollyTimeoutRef.current);
-    if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
-  };
-}, [stopCountdownAudio]);
-
-/* =========================
-   7.17 - Animazione podio finale
+   7.17 - Animazione podio finale + musica finale
 ========================= */
 
 useEffect(() => {
   if (game?.phase !== "final") {
     setFinalRevealIndex(-1);
+
+    if (finalPodiumAudioRef.current) {
+      finalPodiumAudioRef.current.pause();
+      finalPodiumAudioRef.current.currentTime = 0;
+    }
+
+    finalPodiumAudioPlayedRef.current = false;
     return;
   }
 
   setFinalRevealIndex(-1);
+
+  if (
+    role === "tv" &&
+    finalPodiumAudioRef.current &&
+    !finalPodiumAudioPlayedRef.current
+  ) {
+    finalPodiumAudioPlayedRef.current = true;
+
+    const audio = finalPodiumAudioRef.current;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = 1;
+
+    audio.play().catch((err) => {
+      console.warn("Errore audio finale:", err);
+    });
+  }
 
   const t1 = setTimeout(() => setFinalRevealIndex(5), 1000);
   const t2 = setTimeout(() => setFinalRevealIndex(4), 2800);
@@ -3510,7 +3685,21 @@ useEffect(() => {
     clearTimeout(t4);
     clearTimeout(t5);
   };
-}, [game?.phase]);
+}, [game?.phase, role]);
+
+
+/* =========================
+   7.16 - Cleanup generale TV
+========================= */
+
+useEffect(() => {
+  return () => {
+    stopCountdownAudio();
+    if (tvJollyTimeoutRef.current) clearTimeout(tvJollyTimeoutRef.current);
+    if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+  };
+}, [stopCountdownAudio]);
+
 
 
 /* =========================
@@ -3549,6 +3738,8 @@ useEffect(() => {
 
   return () => clearInterval(interval);
 }, [role, game?.show_leaderboard, game?.phase, players.length]);
+
+
 /* =========================
    7.18 - AUTOSCALE PLAYER DISATTIVATO
 ========================= */
@@ -5585,16 +5776,24 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent:
+        stop10DisplayTime === "TEMPO SCADUTO" ? "flex-start" : "center",
       color: "white",
       position: "relative",
+      overflow: "hidden",
+      paddingTop:
+        stop10DisplayTime === "TEMPO SCADUTO" ? "clamp(90px, 10vh, 140px)" : 0,
+      boxSizing: "border-box",
     }}
   >
     <div
       style={{
         position: "absolute",
         inset: 0,
-        background: "rgba(0,0,0,0.45)",
+        background:
+          stop10DisplayTime === "TEMPO SCADUTO"
+            ? "radial-gradient(circle at center, rgba(180,0,0,0.68), rgba(0,0,0,0.88))"
+            : "rgba(0,0,0,0.45)",
       }}
     />
 
@@ -5603,13 +5802,22 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         position: "relative",
         zIndex: 2,
         textAlign: "center",
+        animation:
+          stop10DisplayTime === "TEMPO SCADUTO"
+            ? "stopExpiredFlash 0.35s infinite"
+            : "none",
+        transform:
+          stop10DisplayTime === "TEMPO SCADUTO" ? "translateY(-20px)" : "none",
       }}
     >
       <div
         style={{
-          fontSize: "clamp(80px, 8vw, 150px)",
+          fontSize:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "clamp(64px, 7vw, 120px)"
+              : "clamp(80px, 8vw, 150px)",
           fontWeight: 900,
-          marginBottom: 40,
+          marginBottom: stop10DisplayTime === "TEMPO SCADUTO" ? 28 : 40,
           letterSpacing: 6,
           textShadow:
             "0 0 20px rgba(255,0,0,0.9), 0 0 60px rgba(255,0,0,0.7)",
@@ -5620,24 +5828,44 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 
       <div
         style={{
-          fontSize: "clamp(140px, 18vw, 300px)",
+          fontSize:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "clamp(76px, 8vw, 150px)"
+              : "clamp(140px, 18vw, 300px)",
           fontWeight: 900,
           fontFamily: "'Orbitron', monospace",
-          letterSpacing: 12,
-          lineHeight: 0.9,
-          color: stop10DisplayTime === "???" ? "#60a5fa" : "#dbeafe",
+          letterSpacing: stop10DisplayTime === "TEMPO SCADUTO" ? 4 : 12,
+          lineHeight: stop10DisplayTime === "TEMPO SCADUTO" ? 1.05 : 0.9,
+          color:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "#ff1f1f"
+              : stop10DisplayTime === "???"
+              ? "#60a5fa"
+              : "#dbeafe",
           textShadow:
-            stop10DisplayTime === "???"
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "0 0 18px #ffffff, 0 0 35px #ff0000, 0 0 100px #ff0000"
+              : stop10DisplayTime === "???"
               ? "0 0 20px #3b82f6, 0 0 70px #2563eb"
               : "0 0 15px #fff, 0 0 40px #60a5fa, 0 0 100px #2563eb",
-          padding: "25px 55px",
+          padding:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "28px 70px"
+              : "25px 55px",
           borderRadius: 28,
           background:
-            "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(0,0,0,0.78))",
-          border: "2px solid rgba(96,165,250,0.75)",
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "linear-gradient(180deg, rgba(90,0,0,0.96), rgba(0,0,0,0.86))"
+              : "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(0,0,0,0.78))",
+          border:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "4px solid rgba(255,0,0,0.95)"
+              : "2px solid rgba(96,165,250,0.75)",
           boxShadow:
-            "0 0 35px rgba(37,99,235,0.6), inset 0 0 30px rgba(96,165,250,0.22)",
-          minWidth: 600,
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "0 0 55px rgba(255,0,0,0.95), inset 0 0 40px rgba(255,0,0,0.35)"
+              : "0 0 35px rgba(37,99,235,0.6), inset 0 0 30px rgba(96,165,250,0.22)",
+          minWidth: stop10DisplayTime === "TEMPO SCADUTO" ? 920 : 600,
           display: "inline-block",
         }}
       >
@@ -5646,16 +5874,44 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 
       <div
         style={{
-          marginTop: 35,
+          marginTop: stop10DisplayTime === "TEMPO SCADUTO" ? 28 : 35,
           fontSize: "clamp(26px, 2.8vw, 42px)",
-          fontWeight: 700,
-          color: "#facc15",
-          textShadow: "0 0 18px rgba(250,204,21,0.7)",
+          fontWeight: 800,
+          color:
+            stop10DisplayTime === "TEMPO SCADUTO" ? "#ff4444" : "#facc15",
+          textShadow:
+            stop10DisplayTime === "TEMPO SCADUTO"
+              ? "0 0 18px rgba(255,0,0,0.9)"
+              : "0 0 18px rgba(250,204,21,0.7)",
         }}
       >
-        Premi STOP quando pensi sia arrivato lo zero
+        {stop10DisplayTime === "TEMPO SCADUTO"
+          ? "STOP ZERO TERMINATO"
+          : "Premi STOP quando pensi sia arrivato lo zero"}
       </div>
     </div>
+
+    <style>
+      {`
+        @keyframes stopExpiredFlash {
+          0% {
+            opacity: 1;
+            transform: scale(1) translateY(-20px);
+            filter: brightness(1);
+          }
+          50% {
+            opacity: 0.35;
+            transform: scale(1.06) translateY(-20px);
+            filter: brightness(1.8);
+          }
+          100% {
+            opacity: 1;
+            transform: scale(1) translateY(-20px);
+            filter: brightness(1);
+          }
+        }
+      `}
+    </style>
   </div>
 )}
 
@@ -6367,6 +6623,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   </div>
 )}
 
+ 
 {/* =========================
    10.17 - Podio finale TV
 ========================= */}
@@ -6427,6 +6684,8 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       >
         {sortedPlayers.slice(0, 5).map((player, index) => {
           const position = index + 1;
+          const isVisible =
+            finalRevealIndex !== -1 && position >= finalRevealIndex;
 
           const cardHeight =
             position === 1
@@ -6476,18 +6735,22 @@ const renderTvQuestionMedia = (question, variant = "question") => {
                   position === 1
                     ? "0 0 30px rgba(250,204,21,0.55)"
                     : "0 10px 22px rgba(0,0,0,0.35)",
+                opacity: isVisible ? 1 : 0,
+                transform: isVisible
+                  ? "translateY(0) scale(1)"
+                  : "translateY(80px) scale(0.85)",
+                transition: "opacity 0.7s ease, transform 0.7s ease",
+                animation:
+                  isVisible && position === 1
+                    ? "winnerPulse 1s ease-in-out infinite"
+                    : "none",
               }}
             >
               <div style={{ fontSize: position === 1 ? 52 : 40 }}>
                 {medal}
               </div>
 
-              <div
-                style={{
-                  fontSize: position === 1 ? 28 : 21,
-                  fontWeight: 900,
-                }}
-              >
+              <div style={{ fontSize: position === 1 ? 28 : 21, fontWeight: 900 }}>
                 {position}° POSTO
               </div>
 
@@ -6515,13 +6778,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
               </div>
 
               {position === 1 && (
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 900,
-                    color: GOLD,
-                  }}
-                >
+                <div style={{ fontSize: 15, fontWeight: 900, color: GOLD }}>
                   🎉 VINCITORE
                 </div>
               )}
@@ -6537,7 +6794,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     </div>
   );
 }
-
 /* =====================================================
    PARTE 11 - SCHERMATA HOST + CONTROLLI
 ===================================================== */
