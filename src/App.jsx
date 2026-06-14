@@ -5584,8 +5584,8 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     )}
   </div>
 )}
-      
-{/* =========================
+
+     {/* =========================
    10.9 - STILI GLOBALI TV
 ========================= */}
 <style>
@@ -5644,7 +5644,48 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   100% { transform: translateY(0); opacity: 1; }
 }
 
+/* ===== NUOVA ANIMAZIONE INTRO STOP ZERO ===== */
+@keyframes stopZeroZoom {
+
+  0% {
+    transform: scale(1);
+    filter: brightness(0.92);
+  }
+
+  30% {
+    transform: scale(1.015);
+    filter: brightness(1);
+  }
+
+  60% {
+    transform: scale(1.03);
+    filter: brightness(1.05);
+  }
+
+  100% {
+    transform: scale(1.06);
+    filter: brightness(1.08);
+  }
+}
+
+/* ===== LEGGERO RESPIRO LUMINOSO ===== */
+@keyframes stopZeroGlow {
+
+  0% {
+    box-shadow: inset 0 0 0 rgba(255,255,255,0);
+  }
+
+  50% {
+    box-shadow: inset 0 0 120px rgba(255,255,255,0.08);
+  }
+
+  100% {
+    box-shadow: inset 0 0 0 rgba(255,255,255,0);
+  }
+}
+
 /* ===== GENERALE ===== */
+
 .tv-anim-fade {
   animation: fadeIn 0.4s ease;
 }
@@ -5678,8 +5719,50 @@ const renderTvQuestionMedia = (question, variant = "question") => {
 .slide-up {
   animation: slideUp 0.5s ease;
 }
+
+/* ===== INTRO STOP ZERO TV ===== */
+
+.stopzero-intro {
+
+  overflow: hidden;
+  position: relative;
+}
+
+.stopzero-intro::before {
+
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background: inherit;
+  background-size: cover;
+  background-position: center;
+
+  animation: stopZeroZoom 25s ease-in-out forwards;
+  transform-origin: center center;
+
+  z-index: 0;
+}
+
+.stopzero-intro::after {
+
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  animation: stopZeroGlow 4s ease-in-out infinite;
+
+  z-index: 1;
+}
+
+.stopzero-intro > * {
+
+  position: relative;
+  z-index: 2;
+}
+
 `}
-</style>
+</style> 
       
       {/* =========================
          10.10 - Contenitore schermate TV
@@ -5708,10 +5791,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
     style={{
       position: "fixed",
       inset: 0,
-      backgroundImage: `url(${STOPZERO_BG})`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundRepeat: "no-repeat",
+      background: "#000",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -5721,12 +5801,40 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   >
     <audio autoPlay src={STOPZERO_AUDIO} />
 
+    <img
+      src={STOPZERO_BG}
+      alt=""
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        objectPosition: "center",
+        animation: "stopZeroIntroImageZoom 5s ease-in-out infinite alternate",
+        transformOrigin: "center center",
+        zIndex: 0,
+        pointerEvents: "none",
+      }}
+    />
+
     <div
       style={{
         position: "absolute",
         inset: 0,
+        zIndex: 1,
         background:
-          "radial-gradient(circle at center, rgba(0,0,0,0.05), rgba(0,0,0,0.65))",
+          "radial-gradient(circle at center, rgba(0,0,0,0.02), rgba(0,0,0,0.68))",
+      }}
+    />
+
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 2,
+        background:
+          "linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.05), rgba(0,0,0,0.45))",
       }}
     />
 
@@ -5736,6 +5844,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         zIndex: 3,
         textAlign: "center",
         color: "white",
+        transform: "translateY(20px)",
       }}
     >
       <div
@@ -5744,6 +5853,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           fontWeight: 900,
           letterSpacing: 8,
           textTransform: "uppercase",
+          animation: "stopZeroTextPulse 0.8s ease-in-out infinite alternate",
           textShadow:
             "0 0 20px rgba(255,0,0,0.9), 0 0 60px rgba(255,0,0,0.7)",
         }}
@@ -5763,6 +5873,52 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         Preparati...
       </div>
     </div>
+
+    <style>
+      {`
+        @keyframes stopZeroIntroImageZoom {
+          0% {
+            transform: scale(1) rotate(0deg);
+            filter: brightness(0.7) saturate(1);
+          }
+
+          100% {
+            transform: scale(1.25) rotate(1deg);
+            filter: brightness(1.4) saturate(1.25);
+          }
+        }
+
+        @keyframes stopZeroTextPulse {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+
+          100% {
+            transform: scale(1.12);
+            opacity: 0.75;
+          }
+        }
+
+        @keyframes stopExpiredFlash {
+          0% {
+            opacity: 1;
+            transform: scale(1) translateY(-20px);
+            filter: brightness(1);
+          }
+          50% {
+            opacity: 0.35;
+            transform: scale(1.06) translateY(-20px);
+            filter: brightness(1.8);
+          }
+          100% {
+            opacity: 1;
+            transform: scale(1) translateY(-20px);
+            filter: brightness(1);
+          }
+        }
+      `}
+    </style>
   </div>
 )}
 
@@ -5890,28 +6046,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           : "Premi STOP quando pensi sia arrivato lo zero"}
       </div>
     </div>
-
-    <style>
-      {`
-        @keyframes stopExpiredFlash {
-          0% {
-            opacity: 1;
-            transform: scale(1) translateY(-20px);
-            filter: brightness(1);
-          }
-          50% {
-            opacity: 0.35;
-            transform: scale(1.06) translateY(-20px);
-            filter: brightness(1.8);
-          }
-          100% {
-            opacity: 1;
-            transform: scale(1) translateY(-20px);
-            filter: brightness(1);
-          }
-        }
-      `}
-    </style>
   </div>
 )}
 
@@ -6623,7 +6757,6 @@ const renderTvQuestionMedia = (question, variant = "question") => {
   </div>
 )}
 
- 
 {/* =========================
    10.17 - Podio finale TV
 ========================= */}
@@ -6640,8 +6773,125 @@ const renderTvQuestionMedia = (question, variant = "question") => {
       overflow: "hidden",
       display: "flex",
       flexDirection: "column",
+      position: "relative",
     }}
   >
+    {finalRevealIndex !== -1 && finalRevealIndex <= 1 && sortedPlayers[0] && (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 50,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      >
+        {Array.from({ length: 60 }).map((_, i) => (
+          <div
+            key={`confetti-${i}`}
+            style={{
+              position: "absolute",
+              top: -40,
+              left: `${(i * 17) % 100}%`,
+              width: 10,
+              height: 18,
+              borderRadius: 3,
+              background:
+                i % 5 === 0
+                  ? "#facc15"
+                  : i % 5 === 1
+                  ? "#ef4444"
+                  : i % 5 === 2
+                  ? "#22c55e"
+                  : i % 5 === 3
+                  ? "#3b82f6"
+                  : "#ffffff",
+              animation: `finalConfettiFall ${3 + (i % 4)}s linear infinite`,
+              animationDelay: `${(i % 20) * 0.12}s`,
+              opacity: 0.9,
+            }}
+          />
+        ))}
+
+        {Array.from({ length: 7 }).map((_, i) => (
+          <div
+            key={`firework-${i}`}
+            style={{
+              position: "absolute",
+              left: `${12 + i * 12}%`,
+              top: `${14 + (i % 3) * 13}%`,
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              background: "#facc15",
+              boxShadow:
+                "0 0 18px #fff, 0 0 35px #facc15, 0 0 70px #ef4444",
+              animation: "finalFirework 1.4s ease-out infinite",
+              animationDelay: `${i * 0.25}s`,
+            }}
+          />
+        ))}
+
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "min(92vw, 1050px)",
+            padding: "34px 46px",
+            borderRadius: 32,
+            textAlign: "center",
+            background:
+              "linear-gradient(180deg, rgba(0,0,0,0.72), rgba(30,20,5,0.82))",
+            border: "3px solid rgba(250,204,21,0.9)",
+            boxShadow:
+              "0 0 60px rgba(250,204,21,0.75), inset 0 0 40px rgba(250,204,21,0.18)",
+            animation: "winnerOverlayPop 1s ease-out forwards",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "clamp(34px, 4vw, 64px)",
+              fontWeight: 900,
+              color: "#facc15",
+              letterSpacing: 4,
+              textShadow: "0 0 30px rgba(250,204,21,0.95)",
+            }}
+          >
+            🏆 VINCE IL QUIZZONE 🏆
+          </div>
+
+          <div
+            style={{
+              marginTop: 20,
+              fontSize: "clamp(46px, 6vw, 96px)",
+              fontWeight: 900,
+              color: "white",
+              textShadow:
+                "0 0 20px #fff, 0 0 45px rgba(250,204,21,0.95)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {sortedPlayers[0].name}
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: "clamp(26px, 3vw, 46px)",
+              fontWeight: 900,
+              color: "#facc15",
+            }}
+          >
+            {sortedPlayers[0].score || 0} punti
+          </div>
+        </div>
+      </div>
+    )}
+
     <h2
       style={{
         fontSize: "clamp(30px, 4vw, 52px)",
@@ -6651,6 +6901,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         letterSpacing: 3,
         lineHeight: 1,
         textShadow: "0 0 30px rgba(250,204,21,0.55)",
+        zIndex: 2,
       }}
     >
       🏆 TOP 5 FINALE
@@ -6680,6 +6931,7 @@ const renderTvQuestionMedia = (question, variant = "question") => {
           margin: "0 auto",
           width: "100%",
           overflow: "hidden",
+          zIndex: 2,
         }}
       >
         {sortedPlayers.slice(0, 5).map((player, index) => {
@@ -6750,7 +7002,12 @@ const renderTvQuestionMedia = (question, variant = "question") => {
                 {medal}
               </div>
 
-              <div style={{ fontSize: position === 1 ? 28 : 21, fontWeight: 900 }}>
+              <div
+                style={{
+                  fontSize: position === 1 ? 28 : 21,
+                  fontWeight: 900,
+                }}
+              >
                 {position}° POSTO
               </div>
 
@@ -6787,13 +7044,65 @@ const renderTvQuestionMedia = (question, variant = "question") => {
         })}
       </div>
     )}
+
+    <style>
+      {`
+        @keyframes winnerPulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.035); }
+          100% { transform: scale(1); }
+        }
+
+        @keyframes finalConfettiFall {
+          0% {
+            transform: translateY(-40px) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(110vh) rotate(720deg);
+            opacity: 0.1;
+          }
+        }
+
+        @keyframes finalFirework {
+          0% {
+            transform: scale(0.2);
+            opacity: 1;
+          }
+          70% {
+            transform: scale(5);
+            opacity: 0.85;
+          }
+          100% {
+            transform: scale(7);
+            opacity: 0;
+          }
+        }
+
+        @keyframes winnerOverlayPop {
+          0% {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.65);
+          }
+          65% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.06);
+          }
+          100% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+          }
+        }
+      `}
+    </style>
   </div>
 )}
-
       </div>
     </div>
   );
 }
+
+ 
 /* =====================================================
    PARTE 11 - SCHERMATA HOST + CONTROLLI
 ===================================================== */
