@@ -3226,29 +3226,11 @@ useEffect(() => {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "live_events", filter: `game_id=eq.${game.id}` },
-      async (payload) => {
-        const { eventType, new: newRow, old: oldRow } = payload;
-
-        if (eventType === "INSERT" && newRow) {
-          setLiveEvents((prev) =>
-            sortEventsRealtime([newRow, ...prev.filter((e) => e.id !== newRow.id)])
-          );
-          return;
-        }
-
-        if (eventType === "UPDATE" && newRow) {
-          setLiveEvents((prev) =>
-            sortEventsRealtime(prev.map((e) => (e.id === newRow.id ? newRow : e)))
-          );
-          return;
-        }
-
-        if (eventType === "DELETE" && oldRow) {
-          setLiveEvents((prev) => prev.filter((e) => e.id !== oldRow.id));
-          return;
-        }
-
-        await loadEventsOnly(game.id);
+      async () => {
+        await Promise.all([
+          loadEventsOnly(game.id),
+          loadScheduledGameEvent(game.id),
+        ]);
       }
     )
 
@@ -3287,6 +3269,7 @@ useEffect(() => {
     loadAnswersOnly(game.id).catch(() => {});
     loadStop10ResultsOnly(game.id).catch(() => {}); // 👈 AGGIUNTO
     loadEventsOnly(game.id).catch(() => {});
+    loadScheduledGameEvent(game.id).catch(() => {});
   }, 3000);
 
   return () => {
@@ -3310,6 +3293,7 @@ useEffect(() => {
     loadPlayersOnly(game.id).catch(() => {});
     loadAnswersOnly(game.id).catch(() => {});
     loadEventsOnly(game.id).catch(() => {});
+    loadScheduledGameEvent(game.id).catch(() => {});
   };
 
   const onVisible = () => {
@@ -4419,6 +4403,8 @@ if (role === "host" && !hostAuthorized) {
    9.3 - Login PLAYER (join partita)
 ========================= */
 
+const scheduledPlayerDate = getScheduledGameDateValue();
+
 if (role === "player" && !joinedPlayer) {
   return (
     <div
@@ -4452,6 +4438,46 @@ if (role === "player" && !joinedPlayer) {
         <p>
           <b>Stato:</b> {status}
         </p>
+
+        {game?.phase === "lobby" && scheduledPlayerDate && (
+          <div
+            style={{
+              margin: "18px auto 4px",
+              padding: "16px 18px",
+              maxWidth: 390,
+              borderRadius: 16,
+              background: "rgba(250,204,21,0.14)",
+              border: "1px solid rgba(250,204,21,0.48)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: "bold",
+                color: GOLD,
+                marginBottom: 8,
+              }}
+            >
+              🎮 PROSSIMA PARTITA
+            </div>
+
+            <div style={{ fontSize: 18, fontWeight: "bold", lineHeight: 1.45 }}>
+              {scheduledPlayerDate.toLocaleDateString("it-IT", {
+                weekday: "long",
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+              })}
+            </div>
+
+            <div style={{ marginTop: 4, fontSize: 22, fontWeight: "bold" }}>
+              alle {scheduledPlayerDate.toLocaleTimeString("it-IT", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 18 }}>
           <input
@@ -4872,6 +4898,46 @@ if (role === "player") {
         {game?.phase === "lobby" && (
           <div style={{ ...panelStyle, textAlign: "center" }}>
             <h2>Attendi l'inizio del quiz...</h2>
+
+            {scheduledPlayerDate && (
+              <div
+                style={{
+                  margin: "16px auto 0",
+                  padding: "14px 16px",
+                  maxWidth: 390,
+                  borderRadius: 16,
+                  background: "rgba(250,204,21,0.14)",
+                  border: "1px solid rgba(250,204,21,0.48)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: "bold",
+                    color: GOLD,
+                    marginBottom: 8,
+                  }}
+                >
+                  🎮 PROSSIMA PARTITA
+                </div>
+
+                <div style={{ fontSize: 17, fontWeight: "bold", lineHeight: 1.45 }}>
+                  {scheduledPlayerDate.toLocaleDateString("it-IT", {
+                    weekday: "long",
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </div>
+
+                <div style={{ marginTop: 4, fontSize: 21, fontWeight: "bold" }}>
+                  alle {scheduledPlayerDate.toLocaleTimeString("it-IT", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
