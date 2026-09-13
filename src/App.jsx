@@ -503,6 +503,9 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [answers, setAnswers] = useState([]);
   const [liveEvents, setLiveEvents] = useState([]);
+  const [scheduledGameEvent, setScheduledGameEvent] = useState(null);
+  const [scheduledGameDate, setScheduledGameDate] = useState("");
+  const [scheduledGameTime, setScheduledGameTime] = useState("");
   const [roundName, setRoundName] = useState("");
   const [mediaCheckReport, setMediaCheckReport] = useState([]);
   const [mediaCheckRunning, setMediaCheckRunning] = useState(false);
@@ -1234,9 +1237,124 @@ async function loadEventsOnly(gameId) {
       new Date(a.created_at || 0).getTime()
   );
 
-  setLiveEvents(sortedEvents);
+  const visibleEvents = sortedEvents.filter(
+    (event) => event.event_type !== "scheduled_game"
+  );
 
-  return sortedEvents;
+  setLiveEvents(visibleEvents);
+
+  return visibleEvents;
+}
+
+async function loadScheduledGameEvent(gameId) {
+  if (!gameId) return null;
+
+  const { data, error } = await supabase
+    .from("live_events")
+    .select("*")
+    .eq("game_id", gameId)
+    .eq("event_type", "scheduled_game")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  setScheduledGameEvent(data || null);
+
+  if (data?.event_text) {
+    const isoValue = String(data.event_text).replace("SCHEDULED_START|", "");
+    const scheduledDate = new Date(isoValue);
+
+    if (!Number.isNaN(scheduledDate.getTime())) {
+      const yyyy = scheduledDate.getFullYear();
+      const mm = String(scheduledDate.getMonth() + 1).padStart(2, "0");
+      const dd = String(scheduledDate.getDate()).padStart(2, "0");
+      const hh = String(scheduledDate.getHours()).padStart(2, "0");
+      const min = String(scheduledDate.getMinutes()).padStart(2, "0");
+
+      setScheduledGameDate(`${yyyy}-${mm}-${dd}`);
+      setScheduledGameTime(`${hh}:${min}`);
+    }
+  }
+
+  return data || null;
+}
+
+async function saveScheduledGameEvent() {
+  if (!game?.id) return;
+
+  if (!scheduledGameDate || !scheduledGameTime) {
+    setStatus("Scegli giorno e ora della partita");
+    return;
+  }
+
+  const localDate = new Date(`${scheduledGameDate}T${scheduledGameTime}:00`);
+
+  if (Number.isNaN(localDate.getTime())) {
+    setStatus("Data o ora non valida");
+    return;
+  }
+
+  try {
+    await supabase
+      .from("live_events")
+      .delete()
+      .eq("game_id", game.id)
+      .eq("event_type", "scheduled_game");
+
+    const { error } = await supabase
+      .from("live_events")
+      .insert([{
+        game_id: game.id,
+        event_type: "scheduled_game",
+        event_text: `SCHEDULED_START|${localDate.toISOString()}`,
+      }]);
+
+    if (error) throw error;
+
+    await loadScheduledGameEvent(game.id);
+    setStatus("Partita programmata");
+  } catch (error) {
+    console.error(error);
+    setStatus("Errore programmazione: " + error.message);
+  }
+}
+
+async function deleteScheduledGameEvent() {
+  if (!game?.id) return;
+
+  const ok = window.confirm("Cancellare la partita programmata?");
+  if (!ok) return;
+
+  try {
+    const { error } = await supabase
+      .from("live_events")
+      .delete()
+      .eq("game_id", game.id)
+      .eq("event_type", "scheduled_game");
+
+    if (error) throw error;
+
+    setScheduledGameEvent(null);
+    setScheduledGameDate("");
+    setScheduledGameTime("");
+    setStatus("Programmazione cancellata");
+  } catch (error) {
+    console.error(error);
+    setStatus("Errore cancellazione programmazione: " + error.message);
+  }
+}
+
+function getScheduledGameDateValue() {
+  if (!scheduledGameEvent?.event_text) return null;
+
+  const isoValue = String(scheduledGameEvent.event_text).replace(
+    "SCHEDULED_START|",
+    ""
+  );
+  const value = new Date(isoValue);
+  return Number.isNaN(value.getTime()) ? null : value;
 }
 
 async function loadAll({ silent = false } = {}) {
@@ -1251,6 +1369,7 @@ async function loadAll({ silent = false } = {}) {
       loadAnswersOnly(g.id),
       loadStop10ResultsOnly(g.id),
       loadEventsOnly(g.id),
+      loadScheduledGameEvent(g.id),
     ]);
 
     if (!silent) setStatus("Dati caricati");
@@ -2264,6 +2383,9 @@ const questionStartedAtMs =
       setStop10PlayerResult(null);
       setStop10TvEffect(null);
       setLiveEvents([]);
+      setScheduledGameEvent(null);
+      setScheduledGameDate("");
+      setScheduledGameTime("");
       setFinalRevealIndex(-1);
       setRoundName("");
 setMediaCheckReport([]);
@@ -7211,6 +7333,87 @@ if (role === "host") {
         <div><b>Timer:</b> {hostDisplayedTime}s</div>
         <div><b>Giocatori:</b> {players.length}</div>
         <div><b>Risposte:</b> {answerStats.totalAnswered} / {answerStats.totalPlayers}</div>
+      </div>
+
+      <div style={{ ...panelStyle, marginBottom: 18 }}>
+        <h2 style={{ marginTop: 0 }}>📅 Programma partita</h2>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "end",
+          }}
+        >
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, opacity: 0.8 }}>Giorno</span>
+            <input
+              type="date"
+              value={scheduledGameDate}
+              onChange={(e) => setScheduledGameDate(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "#0f172a",
+                color: "white",
+              }}
+            />
+          </label>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, opacity: 0.8 }}>Ora</span>
+            <input
+              type="time"
+              value={scheduledGameTime}
+              onChange={(e) => setScheduledGameTime(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "#0f172a",
+                color: "white",
+              }}
+            />
+          </label>
+
+          <button onClick={saveScheduledGameEvent} style={buttonStyle}>
+            💾 Salva evento
+          </button>
+
+          {scheduledGameEvent && (
+            <button
+              onClick={deleteScheduledGameEvent}
+              style={{ ...buttonStyle, background: "#ef4444" }}
+            >
+              🗑️ Cancella evento
+            </button>
+          )}
+        </div>
+
+        {scheduledGameEvent && getScheduledGameDateValue() && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              borderRadius: 12,
+              background: "rgba(124,58,237,0.16)",
+              border: "1px solid rgba(124,58,237,0.45)",
+              fontWeight: 800,
+            }}
+          >
+            Prossima partita: {getScheduledGameDateValue().toLocaleDateString("it-IT", {
+              weekday: "long",
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            })} alle {getScheduledGameDateValue().toLocaleTimeString("it-IT", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </div>
+        )}
       </div>
 
       <div style={{ ...panelStyle, marginBottom: 18 }}>
