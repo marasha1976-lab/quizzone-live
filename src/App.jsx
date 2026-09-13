@@ -249,7 +249,7 @@ function getQuestionMediaHint(question) {
   }
 
   if (type === "video" || question.youtube_url || question.video_url) {
-    return "🎬 GUARDA IN TV";
+    return "🎬 GUARDA IL VIDEO";
   }
 
   if (type === "image" || question.image_url) {
@@ -533,6 +533,7 @@ export default function App() {
   const [tvJollyEffect, setTvJollyEffect] = useState(null);
   const [tvAudioReady, setTvAudioReady] = useState(false);
   const [hideTvAudioOverlay, setHideTvAudioOverlay] = useState(false);
+  const [playerMediaReady, setPlayerMediaReady] = useState(false);
 
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [renderNow, setRenderNow] = useState(Date.now());
@@ -560,6 +561,9 @@ export default function App() {
   const lastRevealQuestionIdRef = useRef(null);
   const lastTvQuestionAudioKeyRef = useRef(null);
   const tvQuestionAudioRef = useRef(null);
+  const lastPlayerQuestionAudioKeyRef = useRef(null);
+  const playerQuestionAudioRef = useRef(null);
+  const playerStopIntroAudioRef = useRef(null);
 
   const finalPodiumAudioRef = useRef(null);
   const finalPodiumAudioPlayedRef = useRef(false);
@@ -719,6 +723,60 @@ export default function App() {
     }
   }, [unlockAudio]);
 
+  const activatePlayerAudio = useCallback(async () => {
+    setPlayerMediaReady(true);
+
+    try {
+      unlockAudio();
+
+      if (!playerQuestionAudioRef.current) {
+        playerQuestionAudioRef.current = new Audio();
+        playerQuestionAudioRef.current.preload = "auto";
+        playerQuestionAudioRef.current.playsInline = true;
+      }
+
+      if (!playerStopIntroAudioRef.current) {
+        playerStopIntroAudioRef.current = new Audio(STOPZERO_AUDIO);
+        playerStopIntroAudioRef.current.preload = "auto";
+        playerStopIntroAudioRef.current.playsInline = true;
+      }
+
+      if (!stop10TensionAudioRef.current) {
+        stop10TensionAudioRef.current = new Audio(STOPZERO_TENSION_AUDIO);
+        stop10TensionAudioRef.current.preload = "auto";
+        stop10TensionAudioRef.current.playsInline = true;
+      }
+
+      if (!stop10BuzzerAudioRef.current) {
+        stop10BuzzerAudioRef.current = new Audio(STOPZERO_BUZZER_AUDIO);
+        stop10BuzzerAudioRef.current.preload = "auto";
+        stop10BuzzerAudioRef.current.playsInline = true;
+      }
+
+      const warmups = [
+        playerQuestionAudioRef.current,
+        playerStopIntroAudioRef.current,
+        stop10TensionAudioRef.current,
+        stop10BuzzerAudioRef.current,
+      ];
+
+      for (const audio of warmups) {
+        if (!audio) continue;
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = true;
+        try {
+          await audio.play();
+        } catch {}
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      }
+    } catch {
+      // Il browser può comunque richiedere un tap sui controlli media.
+    }
+  }, [unlockAudio]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -802,10 +860,11 @@ const hostDisplayedTime = useMemo(() => {
   return 0;
 }, [effectivePhase, countdownTimeLeft, localTimeLeft, stop10ElapsedMs]);
 
-/* AUDIO TENSIONE STOP ZERO - SOLO TV */
+/* AUDIO TENSIONE STOP ZERO - TV + PLAYER ONLINE */
 
 useEffect(() => {
-  if (role !== "tv") return;
+  if (role !== "tv" && role !== "player") return;
+  if (role === "player" && !playerMediaReady) return;
   if (effectivePhase !== "stop10") return;
   if (stop10WaitingToStart) return;
   if (!stop10RoundId) return;
@@ -830,15 +889,17 @@ useEffect(() => {
   }
 }, [
   role,
+  playerMediaReady,
   effectivePhase,
   stop10WaitingToStart,
   stop10RoundId,
 ]);
 
-/* BUZZER TEMPO SCADUTO STOP ZERO - SOLO TV */
+/* BUZZER TEMPO SCADUTO STOP ZERO - TV + PLAYER ONLINE */
 
 useEffect(() => {
-  if (role !== "tv") return;
+  if (role !== "tv" && role !== "player") return;
+  if (role === "player" && !playerMediaReady) return;
   if (effectivePhase !== "stop10") return;
   if (stop10WaitingToStart) return;
   if (!stop10RoundId) return;
@@ -869,6 +930,7 @@ useEffect(() => {
   }
 }, [
   role,
+  playerMediaReady,
   effectivePhase,
   stop10WaitingToStart,
   stop10RoundId,
@@ -1939,6 +2001,10 @@ async function importCsvQuestions(file) {
   ========================= */
 
   async function joinGame() {
+    if (role === "player") {
+      activatePlayerAudio();
+    }
+
     if (!playerName.trim()) {
       setStatus("Scrivi un nome squadra");
       return;
@@ -3649,6 +3715,89 @@ useEffect(() => {
 
 
 /* =========================
+   7.11B - Audio domanda PLAYER online
+========================= */
+
+useEffect(() => {
+  if (role !== "player") return;
+
+  const audioEl = playerQuestionAudioRef.current;
+  if (!audioEl) return;
+
+  const stopPlayerQuestionAudio = () => {
+    audioEl.pause();
+    audioEl.currentTime = 0;
+    audioEl.removeAttribute("src");
+    audioEl.load();
+  };
+
+  if (!playerMediaReady || effectivePhase !== "question") {
+    stopPlayerQuestionAudio();
+    lastPlayerQuestionAudioKeyRef.current = null;
+    return;
+  }
+
+  if (!currentQuestion?.audio_url || !currentQuestion?.id) {
+    stopPlayerQuestionAudio();
+    lastPlayerQuestionAudioKeyRef.current = null;
+    return;
+  }
+
+  const key = `${currentQuestion.id}-${currentQuestion.audio_url}`;
+  if (lastPlayerQuestionAudioKeyRef.current === key) return;
+  lastPlayerQuestionAudioKeyRef.current = key;
+
+  audioEl.pause();
+  audioEl.currentTime = 0;
+  audioEl.src = currentQuestion.audio_url;
+  audioEl.load();
+  audioEl.play().catch((err) => {
+    console.log("Audio domanda player bloccato:", err);
+  });
+
+  return () => {
+    audioEl.pause();
+    audioEl.currentTime = 0;
+  };
+}, [
+  role,
+  playerMediaReady,
+  effectivePhase,
+  currentQuestion?.id,
+  currentQuestion?.audio_url,
+]);
+
+/* =========================
+   7.11C - Intro audio STOP ZERO PLAYER
+========================= */
+
+useEffect(() => {
+  if (role !== "player") return;
+
+  const audio = playerStopIntroAudioRef.current;
+  if (!audio) return;
+
+  if (!playerMediaReady || effectivePhase !== "stop10_intro") {
+    audio.pause();
+    audio.currentTime = 0;
+    return;
+  }
+
+  audio.pause();
+  audio.currentTime = 0;
+  audio.src = STOPZERO_AUDIO;
+  audio.load();
+  audio.play().catch((err) => {
+    console.log("Intro Stop Zero player bloccata:", err);
+  });
+
+  return () => {
+    audio.pause();
+    audio.currentTime = 0;
+  };
+}, [role, playerMediaReady, effectivePhase]);
+
+/* =========================
    7.12 - Cleanup audio TV
 ========================= */
 
@@ -4091,7 +4240,7 @@ const renderQuestionMedia = (question, mode = "player") => {
         playsinline: "1",
       });
 
-      if (mode === "tv") {
+      if (mode === "tv" || mode === "player") {
         params.set("autoplay", "1");
       }
 
@@ -4193,7 +4342,9 @@ const renderQuestionMedia = (question, mode = "player") => {
           <video
             src={question.video_url}
             controls
+            autoPlay={mode === "tv" || mode === "player"}
             playsInline
+            preload="auto"
             style={{
               display: "block",
               width: "100%",
@@ -4212,6 +4363,7 @@ const renderQuestionMedia = (question, mode = "player") => {
           <audio
             src={question.audio_url}
             controls
+            preload="auto"
             style={{ width: "100%" }}
           />
         </div>
@@ -4779,6 +4931,83 @@ if (role === "player") {
         </div>
 
 {/* =========================
+   9.5A - Intro STOP ZERO PLAYER online
+========================= */}
+
+{effectivePhase === "stop10_intro" && (
+  <div
+    className="stopzero-intro"
+    style={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 80,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      textAlign: "center",
+      backgroundImage: `url(${STOPZERO_BG})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    }}
+  >
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "radial-gradient(circle at center, rgba(0,0,0,0.02), rgba(0,0,0,0.72))",
+      }}
+    />
+
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        width: "100%",
+        padding: 18,
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "clamp(52px, 16vw, 96px)",
+          fontWeight: 900,
+          letterSpacing: 3,
+          textTransform: "uppercase",
+          animation: "stopZeroTextPulse 0.8s ease-in-out infinite alternate",
+          textShadow:
+            "0 0 20px rgba(255,0,0,0.9), 0 0 60px rgba(255,0,0,0.7)",
+        }}
+      >
+        STOP ZERO
+      </div>
+
+      <div
+        style={{
+          marginTop: 24,
+          fontSize: "clamp(24px, 7vw, 40px)",
+          fontWeight: 800,
+          color: GOLD,
+          textShadow: "0 0 20px rgba(250,204,21,0.8)",
+        }}
+      >
+        Preparati...
+      </div>
+
+      {!playerMediaReady && (
+        <button
+          onClick={activatePlayerAudio}
+          style={{ ...buttonStyle, marginTop: 24 }}
+        >
+          🔊 Attiva audio
+        </button>
+      )}
+    </div>
+  </div>
+)}
+
+{/* =========================
    9.5B - Minigioco STOP 10 PLAYER
 ========================= */}
 
@@ -4995,6 +5224,16 @@ if (role === "player") {
         boxSizing: "border-box",
       }}
     >
+      {!playerMediaReady &&
+        (currentQuestion.audio_url || currentQuestion.video_url || currentQuestion.youtube_url) && (
+          <button
+            onClick={activatePlayerAudio}
+            style={{ ...buttonStyle, marginBottom: 8, padding: "8px 12px" }}
+          >
+            ▶️ Attiva audio/video
+          </button>
+        )}
+
       {/* TIMER */}
       <div style={{ fontSize: 18, marginBottom: 8 }}>
         ⏱ {Math.max(0, localTimeLeft)}s
@@ -5035,31 +5274,8 @@ if (role === "player") {
         {currentQuestion.question}
       </div>
 
-      {/* IMMAGINE (ADATTIVA) */}
-      {currentQuestion.image_url && (
-        <div
-          style={{
-            width: "100%",
-            maxHeight: "22dvh",
-            marginBottom: 8,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-          }}
-        >
-          <img
-            src={currentQuestion.image_url}
-            alt="Immagine domanda"
-            style={{
-              maxWidth: "100%",
-              maxHeight: "22dvh",
-              objectFit: "contain",
-              borderRadius: 10,
-            }}
-          />
-        </div>
-      )}
+      {/* MEDIA DOMANDA: immagine / audio / video anche sul dispositivo PLAYER */}
+      {renderQuestionMedia(currentQuestion, "player")}
 
       {/* RISPOSTE */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
