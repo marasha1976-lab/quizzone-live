@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
+import HorseRace from "./HorseRace";
 
 // FIX BASE PAGINA: ELIMINA MARGINI BIANCHI SENZA SPACCARE HOST/PLAYER
 if (typeof document !== "undefined") {
@@ -2069,6 +2070,11 @@ async function importCsvQuestions(file) {
       );
 
       setJoinedPlayer(data);
+      try {
+        sessionStorage.setItem(`quizzone-player:${freshGame.id}`, String(data.id));
+      } catch {
+        // La sessione resta utilizzabile anche se il browser blocca lo storage.
+      }
       setJollyUsed(false);
       setStatus("Giocatore aggiunto");
       setPlayerName("");
@@ -3166,6 +3172,17 @@ useEffect(() => {
 }, []);
 
 
+
+useEffect(() => {
+  if (role !== "player" || joinedPlayer || !game?.id) return;
+  try {
+    const savedId = sessionStorage.getItem(`quizzone-player:${game.id}`);
+    const savedPlayer = players.find((player) => String(player.id) === savedId);
+    if (savedPlayer) setJoinedPlayer(savedPlayer);
+  } catch {
+    // Senza storage, resta disponibile la normale entrata nella lobby.
+  }
+}, [role, joinedPlayer, game?.id, players]);
 
 /* =========================
    7.3 - Realtime Supabase
@@ -4687,6 +4704,30 @@ if (role === "player" && !joinedPlayer) {
 /* =========================
    9.4 - Dati e layout dinamico PLAYER
 ========================= */
+
+if (game?.phase === "horse_race" && ["host", "tv", "player"].includes(role)) {
+  return <HorseRace
+    key={game.horse_race?.id}
+    role={role}
+    race={game.horse_race}
+    players={players}
+    playerId={joinedPlayer?.id}
+    now={syncedNowMs}
+    clockOffset={serverOffsetMs}
+    run={async (action, horse) => {
+      const { data, error } = await supabase.rpc("quizzone_horse_race", {
+        p_game_id: String(game.id),
+        p_action: action,
+        p_race_id: game.horse_race?.id,
+        p_player_id: joinedPlayer?.id == null ? null : String(joinedPlayer.id),
+        p_horse: horse ?? null,
+      });
+      if (error) throw error;
+      setGame(data);
+      if (action === "finish") await loadPlayersOnly(game.id);
+    }}
+  />;
+}
 
 if (role === "player") {
   const finalRanking = [...(players || [])].sort((a, b) => {
@@ -7717,6 +7758,13 @@ if (role === "host") {
           <button onClick={revealAnswer} style={buttonStyle}>💡 Risposta</button>
           <button onClick={toggleLeaderboardOnTv} style={buttonStyle}>🏆 Classifica</button>
           <button onClick={startStop10Game} style={buttonStyle}>⏱ Stop10</button>
+          <button disabled={!game || !["lobby", "reveal", "stats", "stop10_results", "final"].includes(game.phase)} style={buttonStyle} onClick={async () => {
+            const { data, error } = await supabase.rpc("quizzone_horse_race", {
+              p_game_id: String(game.id), p_action: "open",
+            });
+            if (error) setStatus("Errore gara cavalli: " + error.message);
+            else setGame(data);
+          }}>🏇 Gara cavalli</button>
 <button onClick={finishStop10Game} style={buttonStyle}>
   🏁 Chiudi Stop10 e assegna punti
 </button>
