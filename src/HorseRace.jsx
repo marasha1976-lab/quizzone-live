@@ -88,7 +88,7 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
     return (
       <main className="horse-race">
         <section className="horse-race-panel horse-race-gains">
-          <h1>🏆 Punti guadagnati nella gara</h1>
+          <h1>🏆 Classifica scommesse</h1>
           {winners.length ? (
             <ol className="horse-race-list">
               {winners.map(player => (
