@@ -55,11 +55,18 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
 
   if (!race) return <main className="horse-race">Caricamento gara…</main>;
 
-  if (role === "tv" && (running || finished)) {
+  if ((role === "tv" || role === "player") && (running || finished)) {
+    const isPlayer = role === "player";
     return (
-      <main className="horse-race horse-race-tv">
+      <main className={`horse-race ${isPlayer ? "horse-race-player-live" : "horse-race-tv"}`}>
+        {isPlayer && (
+          <header className="horse-race-player-status" aria-live="polite">
+            {selected ? <strong>Il tuo cavallo: {HORSES[selected - 1]}</strong> : <strong>Gara in diretta</strong>}
+            {finished && (place >= 0 ? <span>{place + 1}° posto · +{POINTS[place]} punti</span> : <span>Nessun cavallo scelto</span>)}
+          </header>
+        )}
         <iframe ref={frame} onLoad={sendStart} src={`${import.meta.env.BASE_URL}gran-premio-cavalli.html?embed=1`} title="Gran Premio Cavalli" allow="autoplay" />
-        {finished && (
+        {finished && !isPlayer && (
           <aside className="horse-race-scores">
             <h2>Classifica del Quizzone</h2>
             <ol>{[...players].sort((a, b) => (b.score || 0) - (a.score || 0)).map(player => (
@@ -76,9 +83,7 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
       <section className="horse-race-panel">
         <h1>🏇 Gran Premio Cavalli</h1>
         {picking && <p>{role === "player" ? "Scegli il tuo cavallo. Puoi solo guadagnare!" : "Scelte aperte sui telefoni."}</p>}
-        {running && <p>{role === "player" ? "Segui la gara sulla TV." : "Gara in corso sulla TV."}</p>}
-        {running && selected && <p>Il tuo cavallo è <strong>{HORSES[selected - 1]}</strong>.</p>}
-        {finished && role === "player" && <p>{place >= 0 ? `${HORSES[selected - 1]} è arrivato ${place + 1}°. Hai guadagnato ${POINTS[place]} punti.` : "Non hai scelto un cavallo in questa gara."}</p>}
+        {running && <p>Gara in corso sulla TV e sui telefoni.</p>}
         {finished && <p>Punti accreditati nella classifica del Quizzone.</p>}
         {(picking || finished) && (
           <div className="horse-race-grid">
