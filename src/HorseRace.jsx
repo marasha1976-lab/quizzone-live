@@ -4,10 +4,13 @@ import "./HorseRace.css";
 const HORSES = ["Furia", "Lampo", "Freccia", "Tuono", "Saetta", "Vento"];
 const POINTS = [150, 100, 50, 20, 10, 0];
 const RESULTS_DELAY_MS = 67500;
+const PODIUM_DISPLAY_MS = 8000;
 
 export default function HorseRace({ race, role, players, playerId, now, clockOffset, run }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [podiumRaceId, setPodiumRaceId] = useState(null);
+  const [showRacePoints, setShowRacePoints] = useState(false);
   const frame = useRef(null);
   const attemptedFinish = useRef(false);
   const picking = race?.stage === "picking";
@@ -17,6 +20,8 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
   const picks = race?.picks ?? {};
   const selected = picks[playerId];
   const place = finished && selected ? race.order.indexOf(selected) : -1;
+  const hostPicking = role === "host" && picking;
+  const chosenCount = hostPicking ? players.filter(player => picks[player.id]).length : 0;
 
   async function act(action, horse) {
     setBusy(true);
@@ -53,7 +58,51 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
     sendStart();
   }, [race?.id, race?.startsAt, clockOffset]);
 
+  useEffect(() => {
+    if (role !== "tv" || !race?.id) return;
+    function handlePodium(event) {
+      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return;
+      const message = event.data;
+      if (message?.channel === "quizzone-cavalli" && message.type === "result" && message.raceId === race.id) {
+        setPodiumRaceId(message.raceId);
+      }
+    }
+    window.addEventListener("message", handlePodium);
+    return () => window.removeEventListener("message", handlePodium);
+  }, [role, race?.id]);
+
+  useEffect(() => {
+    if (role !== "tv" || !finished || podiumRaceId !== race.id) return;
+    const timer = setTimeout(() => setShowRacePoints(true), PODIUM_DISPLAY_MS);
+    return () => clearTimeout(timer);
+  }, [role, finished, podiumRaceId, race?.id]);
+
   if (!race) return <main className="horse-race">Caricamento gara…</main>;
+
+  if (role === "tv" && finished && showRacePoints) {
+    const winners = players.flatMap(player => {
+      const horse = picks[player.id];
+      const points = POINTS[race.order.indexOf(horse)];
+      return points > 0 ? [{ ...player, horse, points }] : [];
+    }).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, "it"));
+    return (
+      <main className="horse-race">
+        <section className="horse-race-panel horse-race-gains">
+          <h1>🏆 Punti guadagnati nella gara</h1>
+          {winners.length ? (
+            <ol className="horse-race-list">
+              {winners.map(player => (
+                <li key={player.id}>
+                  <span><strong>{winners.findIndex(entry => entry.points === player.points) + 1}° · {player.name}</strong><small>#{player.horse} {HORSES[player.horse - 1]}</small></span>
+                  <strong className="horse-race-gain">+{player.points} punti</strong>
+                </li>
+              ))}
+            </ol>
+          ) : <p>Nessun giocatore ha guadagnato punti in questa gara.</p>}
+        </section>
+      </main>
+    );
+  }
 
   if ((role === "tv" || role === "player") && (running || finished)) {
     const isPlayer = role === "player";
@@ -66,14 +115,6 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
           </header>
         )}
         <iframe ref={frame} onLoad={sendStart} src={`${import.meta.env.BASE_URL}gran-premio-cavalli.html?embed=1`} title="Gran Premio Cavalli" allow="autoplay" />
-        {finished && !isPlayer && (
-          <aside className="horse-race-scores">
-            <h2>Classifica del Quizzone</h2>
-            <ol>{[...players].sort((a, b) => (b.score || 0) - (a.score || 0)).map(player => (
-              <li key={player.id}>{player.name} · {player.score || 0} punti</li>
-            ))}</ol>
-          </aside>
-        )}
       </main>
     );
   }
@@ -97,6 +138,20 @@ export default function HorseRace({ race, role, players, playerId, now, clockOff
               );
             })}
           </div>
+        )}
+        {hostPicking && (
+          <section className="horse-race-checklist">
+            <h2>Scelte dei giocatori</h2>
+            <p aria-live="polite"><strong>{chosenCount} su {players.length}</strong> hanno scelto. Mancano {players.length - chosenCount}.</p>
+            {players.length > 0 && <ul className="horse-race-list">
+              {[...players].sort((a, b) => Number(Boolean(picks[a.id])) - Number(Boolean(picks[b.id])) || a.name.localeCompare(b.name, "it")).map(player => (
+                <li key={player.id}>
+                  <strong>{player.name}</strong>
+                  <span>{picks[player.id] ? `✓ #${picks[player.id]} ${HORSES[picks[player.id] - 1]}` : "In attesa di scelta"}</span>
+                </li>
+              ))}
+            </ul>}
+          </section>
         )}
         {error && <p role="alert">{error}</p>}
         {role === "host" && (
